@@ -1,79 +1,57 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 
-// --- THE ASTROPHYSICS DATABASE ---
-const STAR_SYSTEMS = [
-  {
-    id: "SOL", name: "Sol (Our System)", x: 0, y: 0, z: 0, mass: 1.0, color: "#fef08a",
-    planets: [
-      { name: "Mercury", d: 0.387, r: 0.5, color: "#a3a3a3" },
-      { name: "Venus", d: 0.723, r: 1.2, color: "#fcd34d" },
-      { name: "Earth", d: 1.0, r: 1.25, color: "#3b82f6" },
-      { name: "Mars", d: 1.524, r: 0.7, color: "#ef4444" },
-      { name: "Jupiter", d: 5.204, r: 4.0, color: "#fdba74" }
-    ]
-  },
-  {
-    id: "CEN", name: "Alpha Centauri", x: 4.37, y: 0, z: 0, mass: 1.1, color: "#fde047",
-    planets: [
-      { name: "Proxima b", d: 0.048, r: 1.1, color: "#10b981" },
-      { name: "Proxima c", d: 1.48, r: 2.0, color: "#6366f1" }
-    ]
-  },
-  {
-    id: "TRAP", name: "TRAPPIST-1", x: -20.5, y: -10, z: 32.8, mass: 0.089, color: "#ef4444",
-    planets: [
-      { name: "1d", d: 0.022, r: 0.8, color: "#4ade80" },
-      { name: "1e", d: 0.029, r: 0.9, color: "#60a5fa" },
-      { name: "1f", d: 0.038, r: 1.0, color: "#94a3b8" }
-    ]
-  },
-  {
-    id: "SIRI", name: "Sirius", x: -4.5, y: 6.2, z: -3.8, mass: 2.02, color: "#cffafe",
-    planets: []
-  }
+// --- TRUE LOCAL STELLAR NEIGHBORHOOD DATABASE ---
+// Coordinates (x, y, z) are mapped in exact Light Years (LY) relative to Sol at (0,0,0).
+const REAL_STARS = [
+  { id: "SOL", name: "Sun (Sol)", class: "G-Type", dist: 0, x: 0, y: 0, z: 0, color: "#fef08a", radius: 1 },
+  { id: "CEN", name: "Alpha Centauri", class: "G/K-Type", dist: 4.37, x: 4.37, y: 0.0, z: 0.0, color: "#fde047", radius: 1.1 },
+  { id: "BAR", name: "Barnard's Star", class: "M-Type Red Dwarf", dist: 5.96, x: 3.5, y: 4.0, z: 2.0, color: "#ef4444", radius: 0.2 },
+  { id: "WOL", name: "Wolf 359", class: "M-Type Flare Star", dist: 7.78, x: -1.0, y: 7.0, z: 3.0, color: "#f87171", radius: 0.16 },
+  { id: "SIR", name: "Sirius A", class: "A-Type Main Sequence", dist: 8.60, x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.7 },
+  { id: "ERI", name: "Epsilon Eridani", class: "K-Type Main Sequence", dist: 10.5, x: -5.0, y: -8.0, z: 5.0, color: "#fdba74", radius: 0.73 },
+  { id: "PRO", name: "Procyon", class: "F-Type Main Sequence", dist: 11.4, x: -4.0, y: -10.0, z: 1.0, color: "#fef08a", radius: 2.0 },
+  { id: "TAU", name: "Tau Ceti", class: "G-Type Main Sequence", dist: 11.9, x: -11.0, y: 0.0, z: -4.0, color: "#fde047", radius: 0.79 },
+  { id: "ALT", name: "Altair", class: "A-Type Main Sequence", dist: 16.7, x: 12.0, y: 5.0, z: 8.0, color: "#a5f3fc", radius: 1.8 },
+  { id: "VEG", name: "Vega", class: "A-Type Main Sequence", dist: 25.0, x: 15.0, y: 15.0, z: -10.0, color: "#67e8f9", radius: 2.3 },
+  { id: "ARC", name: "Arcturus", class: "K-Type Red Giant", dist: 36.7, x: 5.0, y: 30.0, z: 20.0, color: "#fb923c", radius: 25.4 },
+  { id: "BET", name: "Betelgeuse", class: "M-Type Red Supergiant", dist: 548.0, x: -400.0, y: -100.0, z: 300.0, color: "#dc2626", radius: 887.0 },
+  { id: "RIG", name: "Rigel", class: "B-Type Blue Supergiant", dist: 860.0, x: -600.0, y: -200.0, z: 500.0, color: "#3b82f6", radius: 78.9 },
 ];
 
-const LY_TO_AU = 63241.077; 
-const AU_IN_LY = 1 / LY_TO_AU; // ~0.0000158
-
-export default function SeamlessRelativisticEngine() {
+export default function InterstellarFlightEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   const [velocityC, setVelocityC] = useState(0); 
   const [timeMultiplier, setTimeMultiplier] = useState(1); 
   
   const [telemetry, setTelemetry] = useState({ 
-    universeYears: 0, shipYears: 0, gamma: 1, distance: 0, zoom: 1 
+    universeYears: 0, shipYears: 0, gamma: 1, distance: 0 
   });
 
-  const [targetStar, setTargetStar] = useState(STAR_SYSTEMS[0]);
+  const [targetStar, setTargetStar] = useState(REAL_STARS[1]);
 
-  // Persistent Engine State
+  // Persistent Engine State (64-bit precision in Light Years)
   const engineState = useRef({
-    // NEW SPAWN POINT: Exactly 2.0 AU away from the Sun (Sol)
-    ship: { x: 0, y: 0.000005, z: -(2.0 * AU_IN_LY) }, 
-    
-    // CAMERA LERP SYSTEM (Smooth Damping)
+    ship: { x: 0, y: 0.0, z: -0.05 }, // Spawn slightly behind Sol so we can see it
     camera: { 
         pitch: 0, yaw: 0, 
-        targetPitch: 0.05, targetYaw: 0, // Targets for the Lerp function
-        zoomExp: 0, zoomRaw: 1 
+        targetPitch: 0, targetYaw: 0 
     },
     mouse: { isDown: false, lastX: 0, lastY: 0 },
-    clocks: { universe: 0, ship: 0 },
-    planetAngles: new Map<string, number>()
+    clocks: { universe: 0, ship: 0 }
   });
 
-  const bgStars = useRef(Array.from({ length: 4000 }, () => ({
-    x: (Math.random() - 0.5) * 1000,
-    y: (Math.random() - 0.5) * 1000,
-    z: (Math.random() - 0.5) * 1000,
+  // Background stars for parallax and relativistic aberration reference
+  const bgStars = useRef(Array.from({ length: 5000 }, () => ({
+    x: (Math.random() - 0.5) * 5000,
+    y: (Math.random() - 0.5) * 5000,
+    z: (Math.random() - 0.5) * 5000,
     size: Math.random() * 0.8 + 0.2,
     alpha: Math.random() * 0.5 + 0.1
   })));
 
-  // SMOOTH INPUT HANDLING
+  // Smooth Input Handling
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
     engineState.current.mouse.lastX = e.clientX;
@@ -88,7 +66,6 @@ export default function SeamlessRelativisticEngine() {
     const dx = e.clientX - mouse.lastX;
     const dy = e.clientY - mouse.lastY;
     
-    // We update TARGETS, not the actual camera. This allows smooth gliding.
     engineState.current.camera.targetYaw -= dx * 0.003;
     engineState.current.camera.targetPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.targetPitch - dy * 0.003));
     
@@ -96,15 +73,16 @@ export default function SeamlessRelativisticEngine() {
     mouse.lastY = e.clientY;
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    const cam = engineState.current.camera;
-    cam.zoomExp = Math.max(0, Math.min(15, cam.zoomExp - e.deltaY * 0.005));
-    cam.zoomRaw = Math.exp(cam.zoomExp);
-  };
-
-  const centerCamera = () => {
-    engineState.current.camera.targetYaw = 0;
-    engineState.current.camera.targetPitch = 0;
+  // Align ship exactly to target coordinates
+  const alignToTarget = () => {
+    const state = engineState.current;
+    const dx = targetStar.x - state.ship.x;
+    const dy = targetStar.y - state.ship.y;
+    const dz = targetStar.z - state.ship.z;
+    
+    const distanceXZ = Math.sqrt(dx * dx + dz * dz);
+    state.camera.targetYaw = Math.atan2(dx, dz);
+    state.camera.targetPitch = Math.atan2(dy, distanceXZ);
   };
 
   useEffect(() => {
@@ -130,12 +108,11 @@ export default function SeamlessRelativisticEngine() {
       let ty = dy * Math.cos(state.camera.pitch) - tz * Math.sin(state.camera.pitch);
       let fz = dy * Math.sin(state.camera.pitch) + tz * Math.cos(state.camera.pitch);
 
-      // NEAR-PLANE CULLING FIX: Prevents math exploding when too close
       if (fz < 0.000001) return null; 
 
+      // Relativistic Aberration (FOV narrows at high speeds)
       const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
-      const activeZoom = isBackground ? 1 : state.camera.zoomRaw;
-      const scale = (width / 2) * (activeZoom / fz) * aberration;
+      const scale = (width / 2) * (1 / fz) * aberration;
 
       return { sx: width / 2 + tx * scale, sy: height / 2 + ty * scale, scale: scale, dist: fz };
     };
@@ -143,46 +120,58 @@ export default function SeamlessRelativisticEngine() {
     const animate = () => {
       const state = engineState.current;
       
-      // APPLY CAMERA LERP (The Butter-Smooth Feel)
+      // Smooth Camera Lerp
       state.camera.yaw += (state.camera.targetYaw - state.camera.yaw) * 0.1;
       state.camera.pitch += (state.camera.targetPitch - state.camera.pitch) * 0.1;
 
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
+      // Relativistic Math
       const gamma = 1 / Math.sqrt(1 - Math.pow(velocityC, 2));
       const deltaYears = dtBase * timeMultiplier;
       
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
-      // AUTOPILOT NAVIGATION
-      let distToTarget = 0;
+      // 3D Distance to target
       const tx = targetStar.x - state.ship.x;
       const ty = targetStar.y - state.ship.y;
       const tz = targetStar.z - state.ship.z;
-      distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
+      const distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
 
-      if (velocityC > 0 && distToTarget > 0.00001) {
-        const moveDist = velocityC * deltaYears; 
-        state.ship.x += (tx / distToTarget) * moveDist;
-        state.ship.y += (ty / distToTarget) * moveDist;
-        state.ship.z += (tz / distToTarget) * moveDist;
+      // Sub-light movement vector relative to camera rotation
+      if (velocityC > 0) {
+        const moveDist = velocityC * deltaYears; // Distance in LY
+        // Move forward along the direction the camera is facing
+        state.ship.x += Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
+        state.ship.y += Math.sin(state.camera.pitch) * moveDist;
+        state.ship.z += Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
       }
 
       if (Math.random() < 0.1) {
         setTelemetry({
           universeYears: state.clocks.universe, shipYears: state.clocks.ship,
-          gamma: gamma, distance: distToTarget, zoom: state.camera.zoomRaw
+          gamma: gamma, distance: distToTarget
         });
       }
 
-      // 1. BACKGROUND STARS
+      // Draw Background Starfield
       bgStars.current.forEach(star => {
+        // Starfield moves past ship based on absolute velocity and direction
         if (velocityC > 0) {
-           star.z -= velocityC * 5;
-           if (star.z < -500) star.z = 500;
+           const moveDist = velocityC * 10 * timeMultiplier; // Scaled for visual effect
+           star.x -= Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
+           star.y -= Math.sin(state.camera.pitch) * moveDist;
+           star.z -= Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
+           
+           // Loop stars to create infinite field
+           if (star.z < -2500) star.z = 2500;
+           if (star.z > 2500) star.z = -2500;
+           if (star.x < -2500) star.x = 2500;
+           if (star.x > 2500) star.x = -2500;
         }
+
         const proj = project(star.x, star.y, star.z, velocityC, true);
         if (proj) {
           ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
@@ -190,81 +179,52 @@ export default function SeamlessRelativisticEngine() {
         }
       });
 
-      // 2. STARS (WITH YELLOW SCREEN FIX)
-      STAR_SYSTEMS.forEach(star => {
+      // Draw Real Stars
+      REAL_STARS.forEach(star => {
         const starProj = project(star.x, star.y, star.z, velocityC);
         
         if (starProj) {
-          const rawBaseSize = 5 * starProj.scale;
-          // CLAMPING: Prevent the star from becoming infinitely large and washing out the screen
-          const coreRadius = Math.min(width * 0.4, rawBaseSize); 
-          const glowRadius = Math.min(width * 1.5, rawBaseSize * 3);
+          // Accurate visual scaling based on absolute stellar radius (scaled up for visibility)
+          const visualRadius = Math.max(2, (star.radius * 2) * starProj.scale);
+          
+          // Near-plane clamping to prevent screen washout
+          const coreRadius = Math.min(width * 0.4, visualRadius); 
+          const glowRadius = Math.min(width * 1.5, visualRadius * 3);
 
-          if (starProj.dist > 0.000005) {
-             // Draw Corona Glow
+          if (starProj.dist > 0.0001) {
+             // Glowing Corona
              const gradient = ctx.createRadialGradient(starProj.sx, starProj.sy, coreRadius, starProj.sx, starProj.sy, glowRadius);
-             gradient.addColorStop(0, `${star.color}90`); // 90 is hex alpha (slightly transparent)
+             gradient.addColorStop(0, `${star.color}90`); 
              gradient.addColorStop(1, "rgba(0,0,0,0)");
              ctx.fillStyle = gradient;
              ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, glowRadius, 0, Math.PI * 2); ctx.fill();
 
-             // Draw Solid Hot Core
+             // Solid Core
              ctx.fillStyle = "#ffffff";
              ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, coreRadius, 0, Math.PI * 2); ctx.fill();
+
+             // Target Reticle
+             if (star.id === targetStar.id) {
+               ctx.strokeStyle = "rgba(34, 211, 238, 0.5)"; // Cyan
+               ctx.lineWidth = 1;
+               ctx.beginPath();
+               ctx.arc(starProj.sx, starProj.sy, glowRadius + 10, 0, Math.PI * 2);
+               ctx.stroke();
+               
+               // Distance tag directly on star
+               ctx.fillStyle = "rgba(34, 211, 238, 0.8)";
+               ctx.font = "10px monospace";
+               const distanceToThisStar = Math.sqrt(Math.pow(star.x - state.ship.x, 2) + Math.pow(star.y - state.ship.y, 2) + Math.pow(star.z - state.ship.z, 2));
+               ctx.fillText(`TARGET: ${distanceToThisStar.toFixed(3)} LY`, starProj.sx + glowRadius + 15, starProj.sy + 10);
+             }
           }
 
-          // Labels disappear when you get too close so they don't block the screen
-          if (starProj.dist < 50 && starProj.dist > 0.001) {
+          // Dynamic Labeling
+          if (starProj.dist < 100 && starProj.dist > 0.01) {
             ctx.fillStyle = "rgba(255,255,255,0.9)";
             ctx.font = "12px monospace";
-            ctx.fillText(star.name, starProj.sx + coreRadius + 15, starProj.sy);
+            ctx.fillText(star.name, starProj.sx + coreRadius + 15, starProj.sy - 5);
           }
-        }
-
-        // 3. PLANETARY ORBITS (No more infinite zooming glitches)
-        const distToCamera = Math.sqrt(Math.pow(star.x - state.ship.x, 2) + Math.pow(star.y - state.ship.y, 2) + Math.pow(star.z - state.ship.z, 2));
-        
-        if (distToCamera < 0.1 || state.camera.zoomRaw > 100) {
-          star.planets.forEach(p => {
-            const planetId = `${star.id}-${p.name}`;
-            if (!state.planetAngles.has(planetId)) state.planetAngles.set(planetId, Math.random() * Math.PI * 2);
-            
-            const periodYears = Math.sqrt(Math.pow(p.d, 3) / star.mass);
-            let currentAngle = state.planetAngles.get(planetId)!;
-            currentAngle += (deltaYears / periodYears) * Math.PI * 2;
-            state.planetAngles.set(planetId, currentAngle);
-
-            const radiusInLY = p.d * AU_IN_LY;
-            const px = star.x + radiusInLY * Math.cos(currentAngle);
-            const pz = star.z + radiusInLY * Math.sin(currentAngle);
-            const py = star.y;
-
-            const pProj = project(px, py, pz, velocityC);
-            if (pProj) {
-              // Clamp planet size so they don't consume the screen either
-              const pSize = Math.min(width * 0.2, Math.max(1.5, p.r * pProj.scale * 0.0005)); 
-              ctx.fillStyle = p.color;
-              ctx.beginPath(); ctx.arc(pProj.sx, pProj.sy, pSize, 0, Math.PI * 2); ctx.fill();
-              
-              if (state.camera.zoomRaw > 500 || distToCamera < 0.001) {
-                ctx.beginPath();
-                for (let a = 0; a <= Math.PI * 2; a += 0.1) {
-                  const ringX = star.x + radiusInLY * Math.cos(a);
-                  const ringZ = star.z + radiusInLY * Math.sin(a);
-                  const ringProj = project(ringX, py, ringZ, velocityC);
-                  if (ringProj) {
-                    if (a === 0) ctx.moveTo(ringProj.sx, ringProj.sy);
-                    else ctx.lineTo(ringProj.sx, ringProj.sy);
-                  }
-                }
-                ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.stroke();
-                
-                ctx.fillStyle = "rgba(255,255,255,0.7)";
-                ctx.font = "10px monospace";
-                ctx.fillText(p.name, pProj.sx + pSize + 6, pProj.sy + 4);
-              }
-            }
-          });
         }
       });
 
@@ -285,42 +245,48 @@ export default function SeamlessRelativisticEngine() {
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onMouseMove={handleMouseMove}
-      onWheel={handleWheel}
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
-      <aside className="absolute top-6 left-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-lg pointer-events-auto shadow-2xl">
-        <p className="text-[10px] uppercase tracking-widest text-cyan-400 mb-4 animate-pulse">Nav-Computer Online</p>
+      {/* NAV COMPUTER */}
+      <aside className="absolute top-6 left-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-lg pointer-events-auto shadow-2xl flex flex-col max-h-[80vh]">
+        <p className="text-[10px] uppercase tracking-widest text-cyan-400 mb-4 animate-pulse">Stellar Cartography Online</p>
+        
         <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
-           <h2 className="text-xl font-bold">Coordinates</h2>
-           <button onClick={centerCamera} className="text-[10px] uppercase border border-white/20 px-2 py-1 rounded hover:bg-white/10 transition-colors">Align Forward</button>
+           <h2 className="text-xl font-bold">Local Bubble</h2>
+           <button onClick={alignToTarget} className="text-[10px] uppercase border border-cyan-500/50 text-cyan-400 px-3 py-1.5 rounded hover:bg-cyan-500/20 transition-colors">Align Trajectory</button>
         </div>
         
-        <div className="space-y-2 mb-6">
-          {STAR_SYSTEMS.map(sys => (
+        <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+          {REAL_STARS.map(sys => (
             <button 
               key={sys.id}
               onClick={() => setTargetStar(sys)}
-              className={`w-full text-left p-3 text-sm rounded border transition-colors ${targetStar.id === sys.id ? "bg-cyan-950/50 border-cyan-500" : "bg-black/40 border-white/10 hover:border-white/30"}`}
+              className={`w-full text-left p-3 rounded border transition-colors flex justify-between items-center ${targetStar.id === sys.id ? "bg-cyan-950/50 border-cyan-500" : "bg-black/40 border-white/10 hover:border-white/30"}`}
             >
-              {sys.name}
+              <div>
+                <div className="text-sm font-bold text-white">{sys.name}</div>
+                <div className="text-[10px] text-neutral-500">{sys.class}</div>
+              </div>
+              <div className="w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: sys.color }}></div>
             </button>
           ))}
         </div>
 
-        <div className="bg-white/5 p-4 rounded border border-white/5">
-          <p className="text-[10px] uppercase text-neutral-500 mb-1">Target Distance</p>
-          <p className="text-lg font-bold text-white">{telemetry.distance.toFixed(6)} LY</p>
-          <p className="text-[10px] text-neutral-500 mt-2">({(telemetry.distance * LY_TO_AU).toLocaleString(undefined, {maximumFractionDigits:0})} AU)</p>
+        <div className="mt-4 bg-white/5 p-4 rounded border border-white/5 shrink-0">
+          <p className="text-[10px] uppercase text-neutral-500 mb-1">Vector Distance</p>
+          <p className="text-xl font-bold text-white">{telemetry.distance.toFixed(6)} LY</p>
+          <p className="text-[10px] text-cyan-500 mt-1 uppercase tracking-widest">Target Lock Active</p>
         </div>
       </aside>
 
+      {/* RELATIVISTIC PHYSICS CONTROLS */}
       <footer className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-3xl bg-black/80 backdrop-blur-3xl border border-white/10 p-8 rounded-2xl pointer-events-auto shadow-2xl">
         <div className="grid grid-cols-2 gap-12">
           
           <div className="flex flex-col gap-2">
             <div className="flex justify-between">
-              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Sub-light Throttle</span>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Relativistic Velocity (v)</span>
               <span className="text-xs font-bold text-cyan-400">{velocityC.toFixed(4)}c</span>
             </div>
             <input 
@@ -333,7 +299,7 @@ export default function SeamlessRelativisticEngine() {
 
           <div className="flex flex-col gap-2">
             <div className="flex justify-between">
-              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Universe Time Multiplier</span>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Universe Time Flow</span>
               <span className="text-xs font-bold text-purple-400">{timeMultiplier.toFixed(0)}x</span>
             </div>
             <input 
@@ -361,6 +327,12 @@ export default function SeamlessRelativisticEngine() {
           </div>
         </div>
       </footer>
+
+      {/* CROSSHAIR */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-20">
+        <div className="w-8 h-px bg-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+        <div className="w-px h-8 bg-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+      </div>
     </main>
   );
 }
