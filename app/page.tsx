@@ -221,7 +221,7 @@ export default function InterstellarTerminal() {
         ctx.beginPath(); ctx.arc(sunProj.sx, sunProj.sy, 40 * sunProj.scale, 0, Math.PI * 2); ctx.fill();
 
         // Orbiting Planets
-        const rendered = [] = [];
+        const rendered: any[] = [];
         sys.planets.forEach((p, i) => {
           planetAngles[i] += p.speed;
           const x = Math.cos(planetAngles[i]) * p.d;
