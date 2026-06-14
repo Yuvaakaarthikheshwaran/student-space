@@ -1,91 +1,97 @@
 "use client";
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-// --- THE COSMOS CODEX (REAL ASTRONOMICAL DATA) ---
-const COSMIC_ENTITIES = [
+// --- THE ASTROPHYSICS DATABASE ---
+// Real-world distances are scaled for the map. 1 Map Unit = ~1 Light Year
+const STAR_SYSTEMS = [
   {
-    id: "BH-TON618",
-    name: "TON 618",
-    classification: "Ultramassive Black Hole",
-    distance: "18.2 Billion LY",
-    mass: 66000000000, // Solar masses
-    radius: "1300 AU",
-    description: "One of the most massive black holes ever discovered. It powers a quasar so intensely luminous that it outshines the rest of its host galaxy by a factor of 100. Its event horizon is so large it would swallow our entire solar system 30 times over.",
-    gravityDistortion: 0.98, // 0 to 1 scale for the visual engine
-    color: "#a855f7" // Purple
+    id: "SOL-01", name: "Solar System (Sol)", type: "G-Type Main Sequence", distance: "0 LY", mass: 1.0, color: "#fef08a",
+    x: 0, y: 0, z: 0,
+    planets: [
+      { name: "Mercury", r: 2, d: 20, speed: 0.04, color: "#a3a3a3" },
+      { name: "Venus", r: 4, d: 35, speed: 0.015, color: "#fcd34d" },
+      { name: "Earth", r: 4.2, d: 50, speed: 0.01, color: "#3b82f6" },
+      { name: "Mars", r: 3, d: 70, speed: 0.005, color: "#ef4444" },
+      { name: "Jupiter", r: 12, d: 130, speed: 0.001, color: "#fdba74" }
+    ]
   },
   {
-    id: "NS-B0531",
-    name: "Crab Pulsar",
-    classification: "Neutron Star",
-    distance: "6,500 LY",
-    mass: 1.4,
-    radius: "10 km",
-    description: "The crushed core of a massive star that exploded in a supernova witnessed by Earth in 1054 AD. It spins 30 times per second, emitting a terrifyingly dense magnetic field and beams of intense radiation.",
-    gravityDistortion: 0.85, 
-    color: "#06b6d4" // Cyan
+    id: "CEN-02", name: "Alpha Centauri System", type: "Triple Star System", distance: "4.37 LY", mass: 2.1, color: "#fde047",
+    x: 40, y: 15, z: -20,
+    planets: [
+      { name: "Alpha Centauri A", r: 15, d: 0, speed: 0, color: "#fef08a" },
+      { name: "Alpha Centauri B", r: 12, d: 40, speed: 0.02, color: "#fdba74" },
+      { name: "Proxima b", r: 4, d: 80, speed: 0.05, color: "#10b981" }
+    ]
   },
   {
-    id: "STAR-UY",
-    name: "UY Scuti",
-    classification: "Red Hypergiant",
-    distance: "5,100 LY",
-    mass: 10,
-    radius: "1,700 Solar Radii",
-    description: "One of the largest known stars in the universe. If placed at the center of our solar system, its photosphere would engulf the orbit of Jupiter. Despite its massive size, its outer layers are essentially a hot vacuum.",
-    gravityDistortion: 0.4,
-    color: "#ef4444" // Red
+    id: "TRAP-03", name: "TRAPPIST-1", type: "Ultra-cool Dwarf", distance: "39.46 LY", mass: 0.08, color: "#ef4444",
+    x: -80, y: -40, z: 120,
+    planets: [
+      { name: "1b", r: 3, d: 15, speed: 0.08, color: "#78716c" },
+      { name: "1c", r: 3.2, d: 22, speed: 0.06, color: "#a8a29e" },
+      { name: "1d", r: 2.5, d: 30, speed: 0.04, color: "#4ade80" },
+      { name: "1e", r: 3.1, d: 38, speed: 0.03, color: "#60a5fa" }
+    ]
   },
   {
-    id: "EXO-TRAPPIST1E",
-    name: "TRAPPIST-1e",
-    classification: "Terrestrial Exoplanet",
-    distance: "39.46 LY",
-    mass: 0.69,
-    radius: "0.92 Earth Radii",
-    description: "An Earth-sized planet orbiting within the habitable zone of an ultra-cool dwarf star. It is tidally locked—one hemisphere is locked in eternal daylight, the other in frozen, eternal night. A twilight ring separates the two.",
-    gravityDistortion: 0.1,
-    color: "#22c55e" // Green
-  },
-  {
-    id: "GAL-M31",
-    name: "Andromeda Galaxy",
-    classification: "Barred Spiral Galaxy",
-    distance: "2.5 Million LY",
-    mass: 1500000000000,
-    radius: "110,000 LY",
-    description: "The nearest major galaxy to the Milky Way. It contains approximately one trillion stars. It is currently hurtling toward us at 110 kilometers per second and will collide with our galaxy in roughly 4.5 billion years.",
-    gravityDistortion: 0.7,
-    color: "#f59e0b" // Amber
-  },
-  {
-    id: "VOID-BOOTES",
-    name: "Boötes Void",
-    classification: "Cosmic Void",
-    distance: "700 Million LY",
-    mass: 0.0000001,
-    radius: "165 Million LY",
-    description: "An incredibly massive, spherical region of space that is terrifyingly empty. At 330 million light-years across, it contains only 60 galaxies. If the Milky Way were in its center, we wouldn't have known other galaxies existed until the 1960s.",
-    gravityDistortion: 0.01,
-    color: "#737373" // Neutral
+    id: "SIRI-04", name: "Sirius (Dog Star)", type: "A-Type Main Sequence", distance: "8.6 LY", mass: 2.02, color: "#cffafe",
+    x: -30, y: 50, z: -40,
+    planets: [
+      { name: "Sirius A", r: 20, d: 0, speed: 0, color: "#cffafe" },
+      { name: "Sirius B (White Dwarf)", r: 3, d: 90, speed: 0.01, color: "#ffffff" }
+    ]
   }
 ];
 
-export default function AstrophysicsTerminal() {
+export default function InterstellarTerminal() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [activeEntity, setActiveEntity] = useState(COSMIC_ENTITIES[0]);
-  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Terminal State
+  const [viewState, setViewState] = useState<"MAP" | "WARP" | "SYSTEM">("MAP");
+  const [activeSystem, setActiveSystem] = useState(STAR_SYSTEMS[0]);
+  const [warpProgress, setWarpProgress] = useState(0);
+  const [cameraRot, setCameraRot] = useState({ pitch: 0.2, yaw: 0 });
 
-  // Search Filter
-  const filteredEntities = useMemo(() => {
-    return COSMIC_ENTITIES.filter(entity => 
-      entity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entity.classification.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [searchQuery]);
+  // Refs for animation loop persistence
+  const viewRef = useRef(viewState);
+  const activeSystemRef = useRef(activeSystem);
+  const frameRef = useRef<number>(0);
+  const mouseRef = useRef({ x: 0, y: 0, isDown: false });
 
-  // --- SPACETIME GRAVITY WELL ENGINE ---
-  // This canvas physically bends a grid based on the selected object's mass
+  // Sync state to refs for the canvas loop
+  useEffect(() => { viewRef.current = viewState; }, [viewState]);
+  useEffect(() => { activeSystemRef.current = activeSystem; }, [activeSystem]);
+
+  // Mouse Handlers for 3D Camera
+  const handleMouseDown = (e: React.MouseEvent) => { mouseRef.current.isDown = true; };
+  const handleMouseUp = () => { mouseRef.current.isDown = false; };
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!mouseRef.current.isDown) return;
+    setCameraRot(prev => ({
+      yaw: prev.yaw - e.movementX * 0.005,
+      pitch: Math.max(-Math.PI/2, Math.min(Math.PI/2, prev.pitch - e.movementY * 0.005))
+    }));
+  };
+
+  const initiateJump = (system: typeof STAR_SYSTEMS[0]) => {
+    setActiveSystem(system);
+    setViewState("WARP");
+    setWarpProgress(0);
+    
+    // Simulate Warp Sequence Time
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 0.01;
+      setWarpProgress(progress);
+      if (progress >= 1) {
+        clearInterval(interval);
+        setViewState("SYSTEM");
+      }
+    }, 30); // ~3 seconds of warp
+  };
+
+  // --- THE MASTER RENDERING ENGINE ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -94,192 +100,257 @@ export default function AstrophysicsTerminal() {
 
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
-    let animationFrameId: number;
 
-    const spacing = 30;
-    const points: Array<{ x: number; y: number; ox: number; oy: number }> = [];
-    
-    // Build Spacetime Grid
-    for (let x = 0; x < width + spacing; x += spacing) {
-      for (let y = 0; y < height + spacing; y += spacing) {
-        points.push({ x, y, ox: x, oy: y });
-      }
-    }
+    // Generate background static stars
+    const staticStars = Array.from({ length: 800 }, () => ({
+      x: (Math.random() - 0.5) * 2000,
+      y: (Math.random() - 0.5) * 2000,
+      z: (Math.random() - 0.5) * 2000,
+      size: Math.random() * 1.5
+    }));
 
-    let time = 0;
+    // Local system orbital angles
+    let planetAngles = Array(10).fill(0).map(() => Math.random() * Math.PI * 2);
+
+    // 3D Projection Math
+    const project = (x: number, y: number, z: number) => {
+      let x1 = x * Math.cos(cameraRot.yaw) - z * Math.sin(cameraRot.yaw);
+      let z1 = x * Math.sin(cameraRot.yaw) + z * Math.cos(cameraRot.yaw);
+      let y1 = y * Math.cos(cameraRot.pitch) - z1 * Math.sin(cameraRot.pitch);
+      let z2 = y * Math.sin(cameraRot.pitch) + z1 * Math.cos(cameraRot.pitch);
+      
+      const camZ = 400; // Camera distance
+      z2 += camZ;
+      if (z2 < 1) z2 = 1;
+      
+      const scale = 500 / z2;
+      return { sx: width / 2 + x1 * scale, sy: height / 2 + y1 * scale, scale, z: z2 };
+    };
 
     const animate = () => {
-      ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
-      time += 0.02;
 
-      const cx = width / 2;
-      const cy = height / 2;
-      
-      // The gravity depth is mapped to the active entity's data
-      const distortionStrength = activeEntity.gravityDistortion * 400;
+      const state = viewRef.current;
+      const sys = activeSystemRef.current;
 
-      ctx.strokeStyle = `rgba(255, 255, 255, 0.08)`;
-      ctx.lineWidth = 1;
-
-      points.forEach((p) => {
-        // Calculate gravitational pull towards center
-        const dx = p.ox - cx;
-        const dy = p.oy - cy;
-        const dist = Math.hypot(dx, dy);
-        
-        let force = 0;
-        if (dist > 10) {
-          // Inverse square law simulation for spacetime bending
-          force = distortionStrength / dist;
+      // 1. GALAXY MAP VIEW
+      if (state === "MAP") {
+        // Draw Grid
+        ctx.strokeStyle = "rgba(255,255,255,0.05)";
+        ctx.beginPath();
+        for(let i = -500; i <= 500; i += 50) {
+          const p1 = project(i, 0, -500); const p2 = project(i, 0, 500);
+          ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy);
+          const p3 = project(-500, 0, i); const p4 = project(500, 0, i);
+          ctx.moveTo(p3.sx, p3.sy); ctx.lineTo(p4.sx, p4.sy);
         }
+        ctx.stroke();
 
-        // Add subtle quantum fluctuation
-        const noise = Math.sin(p.ox * 0.05 + time) * Math.cos(p.oy * 0.05 + time) * 2;
+        // Draw Stars
+        STAR_SYSTEMS.forEach(star => {
+          const proj = project(star.x, star.y, star.z);
+          
+          // Selection Highlight
+          if (star.id === sys.id) {
+            ctx.beginPath();
+            ctx.arc(proj.sx, proj.sy, 15 * proj.scale, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(6, 182, 212, 0.5)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Draw connection to origin plane
+            const dropProj = project(star.x, 0, star.z);
+            ctx.beginPath(); ctx.moveTo(proj.sx, proj.sy); ctx.lineTo(dropProj.sx, dropProj.sy);
+            ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]);
+          }
 
-        p.x = p.ox - (dx / dist) * force + noise;
-        p.y = p.oy - (dy / dist) * force + noise;
-      });
+          // Star Body
+          ctx.beginPath();
+          ctx.arc(proj.sx, proj.sy, 5 * proj.scale, 0, Math.PI * 2);
+          ctx.fillStyle = star.color;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = star.color;
+          ctx.fill();
+          ctx.shadowBlur = 0;
 
-      // Draw Grid Lines (Horizontal & Vertical connections)
-      ctx.beginPath();
-      const cols = Math.floor(width / spacing) + 1;
-      const rows = Math.floor(height / spacing) + 1;
-
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        
-        // Connect Right
-        if ((i + 1) % rows !== 0 && points[i + 1]) {
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(points[i + 1].x, points[i + 1].y);
-        }
-        // Connect Down
-        if (i + rows < points.length) {
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(points[i + rows].x, points[i + rows].y);
-        }
+          // Label
+          ctx.fillStyle = "white";
+          ctx.font = "10px monospace";
+          ctx.fillText(star.name, proj.sx + 10, proj.sy - 10);
+        });
       }
-      ctx.stroke();
 
-      // Draw Singularity/Core glow based on active entity color
-      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, distortionStrength * 1.5);
-      gradient.addColorStop(0, `${activeEntity.color}80`);
-      gradient.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(cx, cy, distortionStrength * 1.5, 0, Math.PI * 2);
-      ctx.fill();
+      // 2. RELATIVISTIC WARP VIEW (Lorentz Contraction Visual)
+      else if (state === "WARP") {
+        const speed = warpProgress < 0.5 ? warpProgress * 2 : (1 - warpProgress) * 2; // Ease in/out
+        const stretch = 1 + speed * 100;
 
-      animationFrameId = requestAnimationFrame(animate);
+        ctx.fillStyle = `rgba(2, 2, 2, ${0.1 + (1 - speed) * 0.9})`; // Motion blur trail
+        ctx.fillRect(0, 0, width, height);
+
+        staticStars.forEach(star => {
+          star.z -= speed * 150; // Fly forward
+          if (star.z < -200) star.z = 1000; // Loop stars
+
+          const proj1 = project(star.x, star.y, star.z);
+          const proj2 = project(star.x, star.y, star.z + stretch); // Stretched tail
+
+          if (proj1.z > 0 && proj2.z > 0) {
+            ctx.beginPath();
+            ctx.moveTo(proj1.sx, proj1.sy);
+            ctx.lineTo(proj2.sx, proj2.sy);
+            
+            // Doppler Shift: Blueshift approaching, redshift peripheral
+            const isCenter = Math.abs(star.x) < 100 && Math.abs(star.y) < 100;
+            ctx.strokeStyle = isCenter ? `rgba(165, 243, 252, ${speed})` : `rgba(239, 68, 68, ${speed * 0.5})`;
+            ctx.lineWidth = proj1.scale * star.size;
+            ctx.stroke();
+          }
+        });
+      }
+
+      // 3. LOCAL SYSTEM PHYSICS VIEW
+      else if (state === "SYSTEM") {
+        // Central Star
+        const sunProj = project(0, 0, 0);
+        const gradient = ctx.createRadialGradient(sunProj.sx, sunProj.sy, 0, sunProj.sx, sunProj.sy, 40 * sunProj.scale);
+        gradient.addColorStop(0, sys.color);
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = gradient;
+        ctx.beginPath(); ctx.arc(sunProj.sx, sunProj.sy, 40 * sunProj.scale, 0, Math.PI * 2); ctx.fill();
+
+        // Orbiting Planets
+        const rendered = [];
+        sys.planets.forEach((p, i) => {
+          planetAngles[i] += p.speed;
+          const x = Math.cos(planetAngles[i]) * p.d;
+          const z = Math.sin(planetAngles[i]) * p.d;
+          
+          // Draw Orbit Ring
+          ctx.beginPath();
+          for (let a = 0; a < Math.PI * 2; a += 0.1) {
+            const ox = Math.cos(a) * p.d;
+            const oz = Math.sin(a) * p.d;
+            const ringProj = project(ox, 0, oz);
+            if (a === 0) ctx.moveTo(ringProj.sx, ringProj.sy); else ctx.lineTo(ringProj.sx, ringProj.sy);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.stroke();
+
+          const proj = project(x, 0, z);
+          rendered.push({ ...proj, ...p });
+        });
+
+        // Depth sort and draw
+        rendered.sort((a, b) => b.z - a.z).forEach(p => {
+          ctx.beginPath(); ctx.arc(p.sx, p.sy, p.r * p.scale, 0, Math.PI * 2);
+          ctx.fillStyle = p.color; ctx.fill();
+          
+          // Tag
+          ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "9px monospace";
+          ctx.fillText(p.name, p.sx + p.r + 4, p.sy + 3);
+        });
+      }
+
+      frameRef.current = requestAnimationFrame(animate);
     };
+
     animate();
 
     const handleResize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
     window.addEventListener("resize", handleResize);
-    return () => { cancelAnimationFrame(animationFrameId); window.removeEventListener("resize", handleResize); };
-  }, [activeEntity]);
+    return () => { cancelAnimationFrame(frameRef.current); window.removeEventListener("resize", handleResize); };
+  }, [cameraRot]);
 
   return (
-    <main className="relative min-h-screen bg-[#020202] text-white font-mono selection:bg-cyan-900 overflow-hidden flex">
-      
-      {/* BACKGROUND SPACETIME ENGINE */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <canvas ref={canvasRef} className="w-full h-full block" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_10%,#020202_90%)]"></div>
-      </div>
+    <main 
+      className="relative w-screen h-screen bg-[#020202] text-neutral-300 font-mono overflow-hidden cursor-crosshair selection:bg-cyan-900"
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onMouseMove={handleMouseMove}
+    >
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
-      {/* LEFT PANEL: DATABASE INDEX */}
-      <aside className="relative z-10 w-96 border-r border-white/10 bg-[#050505]/80 backdrop-blur-xl h-screen flex flex-col shadow-2xl">
-        <div className="p-6 border-b border-white/10">
-          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">System Database</p>
-          <h1 className="text-xl font-bold tracking-tight text-white mb-4">ASTROPHYSICS ARCHIVE</h1>
-          <input
-            type="text"
-            placeholder="Search celestial bodies..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-black/50 border border-white/10 rounded-md py-2 px-3 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white/30 transition-all"
-          />
+      {/* TOP NAVIGATION HUD */}
+      <header className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none z-10">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-cyan-500 mb-1 animate-pulse">Relativistic Flight Terminal</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">STELLAR CARTOGRAPHY</h1>
         </div>
-        
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
-          {filteredEntities.map((entity) => (
-            <button
-              key={entity.id}
-              onClick={() => setActiveEntity(entity)}
-              className={`w-full text-left p-4 rounded-lg border transition-all duration-300 ${
-                activeEntity.id === entity.id 
-                  ? "bg-white/10 border-white/30 shadow-lg" 
-                  : "bg-transparent border-transparent hover:bg-white/5 hover:border-white/10"
-              }`}
-            >
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-[10px] text-neutral-500 uppercase tracking-wider">{entity.id}</span>
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entity.color }}></div>
-              </div>
-              <h3 className="text-sm font-bold text-white">{entity.name}</h3>
-              <p className="text-xs text-neutral-400 truncate mt-1">{entity.classification}</p>
-            </button>
-          ))}
+        <div className="text-right">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Active Mode</p>
+          <p className="text-sm font-bold text-white uppercase">{viewState === "MAP" ? "Sector Scan" : viewState === "WARP" ? "Transit" : "Local Physics"}</p>
         </div>
-        
-        <div className="p-4 border-t border-white/10 text-[9px] text-neutral-600 uppercase tracking-widest text-center">
-          Simulation Real-time: {new Date().toLocaleTimeString()}
-        </div>
+      </header>
+
+      {/* LEFT PANEL: SYSTEM SELECTOR (Only in MAP mode) */}
+      <aside className={`absolute top-24 left-6 w-80 flex flex-col gap-3 transition-all duration-500 ${viewState === "MAP" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none translate-x-[-20px]"}`}>
+        <p className="text-[10px] uppercase tracking-widest text-neutral-500 border-b border-white/10 pb-2">Select Target Coordinates</p>
+        {STAR_SYSTEMS.map(sys => (
+          <button 
+            key={sys.id}
+            onClick={() => setActiveSystem(sys)}
+            className={`text-left p-4 rounded-md border transition-all ${activeSystem.id === sys.id ? "bg-cyan-950/40 border-cyan-500/50" : "bg-black/40 border-white/10 hover:border-white/30 backdrop-blur-md"}`}
+          >
+            <h3 className="text-white font-bold text-sm">{sys.name}</h3>
+            <div className="flex justify-between text-[10px] text-neutral-400 mt-2">
+              <span>{sys.distance}</span>
+              <span>{sys.type}</span>
+            </div>
+          </button>
+        ))}
+
+        <button 
+          onClick={() => initiateJump(activeSystem)}
+          className="mt-4 w-full bg-white text-black font-bold py-3 uppercase tracking-widest text-xs hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] transition-all"
+        >
+          Initiate Relativistic Jump
+        </button>
       </aside>
 
-      {/* RIGHT PANEL: TELEMETRY HUD */}
-      <section className="relative z-10 flex-1 h-screen flex flex-col justify-between p-8 md:p-16 pointer-events-none">
-        
-        {/* Top Right: Status */}
-        <div className="self-end text-right">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 flex items-center justify-end gap-2">
-            Spacetime Distortion Grid <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-          </p>
-          <p className="text-xs font-bold text-white">ACTIVE SENSOR ARRAY</p>
-        </div>
-
-        {/* Bottom Left: Data Readout */}
-        <div className="max-w-2xl bg-black/60 border border-white/10 p-8 rounded-2xl backdrop-blur-2xl shadow-2xl pointer-events-auto transition-all duration-500">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: activeEntity.color }}></div>
-            <div>
-              <h2 className="text-3xl md:text-5xl font-black tracking-tighter text-white">{activeEntity.name}</h2>
-              <p className="text-sm text-neutral-400 mt-1 uppercase tracking-widest">{activeEntity.classification}</p>
-            </div>
-          </div>
+      {/* RIGHT PANEL: LOCAL DATA (Only in SYSTEM mode) */}
+      <aside className={`absolute top-24 right-6 w-80 flex flex-col gap-4 transition-all duration-500 ${viewState === "SYSTEM" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none translate-x-[20px]"}`}>
+        <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-md">
+          <p className="text-[10px] uppercase tracking-widest text-green-400 mb-1">Arrival Confirmed</p>
+          <h2 className="text-2xl font-bold text-white mb-4 border-b border-white/10 pb-4">{activeSystem.name}</h2>
           
-          <p className="text-sm text-neutral-300 leading-relaxed mb-8 font-sans">
-            {activeEntity.description}
-          </p>
+          <div className="space-y-2 mb-6">
+            <div className="flex justify-between text-xs text-neutral-400"><span className="uppercase text-[10px]">Stellar Class</span><span className="text-white">{activeSystem.type}</span></div>
+            <div className="flex justify-between text-xs text-neutral-400"><span className="uppercase text-[10px]">Solar Mass</span><span className="text-white">{activeSystem.mass} M☉</span></div>
+          </div>
 
-          <div className="grid grid-cols-2 gap-6 border-t border-white/10 pt-6">
-            <div>
-              <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">Estimated Mass</p>
-              <p className="text-lg font-bold text-white">{activeEntity.mass.toLocaleString()} <span className="text-xs text-neutral-500 font-normal uppercase">Solar Masses</span></p>
-            </div>
-            <div>
-              <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">Distance from Earth</p>
-              <p className="text-lg font-bold text-white">{activeEntity.distance}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">Physical Radius</p>
-              <p className="text-lg font-bold text-white">{activeEntity.radius}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">Gravitational Force</p>
-              <div className="w-full bg-white/10 h-1.5 rounded-full mt-3 overflow-hidden">
-                <div 
-                  className="h-full transition-all duration-1000 ease-out" 
-                  style={{ width: `${activeEntity.gravityDistortion * 100}%`, backgroundColor: activeEntity.color }}
-                ></div>
+          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-3">Orbital Bodies Detected [{activeSystem.planets.length}]</p>
+          <div className="space-y-3">
+            {activeSystem.planets.map((p, i) => (
+              <div key={i} className="flex items-center justify-between border-l-2 pl-3" style={{ borderColor: p.color }}>
+                <span className="text-xs text-white">{p.name}</span>
+                <span className="text-[10px] text-neutral-500">Orbit: {p.d} AU</span>
               </div>
-            </div>
+            ))}
           </div>
         </div>
-      </section>
+
+        <button 
+          onClick={() => setViewState("MAP")}
+          className="w-full border border-white/20 text-white font-bold py-3 uppercase tracking-widest text-[10px] hover:bg-white/10 backdrop-blur-md transition-colors"
+        >
+          Return to Sector Map
+        </button>
+      </aside>
+
+      {/* WARP HUD (Only visible during jump) */}
+      <div className={`absolute inset-0 pointer-events-none flex flex-col items-center justify-center transition-opacity duration-300 ${viewState === "WARP" ? "opacity-100" : "opacity-0"}`}>
+        <h2 className="text-6xl font-black text-white tracking-tighter mb-4 italic mix-blend-difference">VELOCITY: {(warpProgress * 0.999).toFixed(3)}c</h2>
+        <div className="w-96 h-1 bg-white/20 rounded-full overflow-hidden">
+          <div className="h-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]" style={{ width: `${warpProgress * 100}%` }}></div>
+        </div>
+        <div className="w-96 flex justify-between text-[10px] text-cyan-400 uppercase tracking-widest mt-2 mix-blend-difference">
+          <span>Lorentz Factor: {(1 / Math.sqrt(1 - Math.pow(warpProgress * 0.999, 2))).toFixed(2)}γ</span>
+          <span>Doppler Shift Active</span>
+        </div>
+      </div>
 
     </main>
   );
