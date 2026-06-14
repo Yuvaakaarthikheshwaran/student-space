@@ -17,15 +17,13 @@ const REAL_STARS = [
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  // Controls
   const [velocityC, setVelocityC] = useState(0); 
   const [timeMultiplier, setTimeMultiplier] = useState(1); 
   
-  // UI Telemetry
   const [distances, setDistances] = useState<Record<string, number>>({});
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0 });
 
-  const [targetStar, setTargetStar] = useState(REAL_STARS[1]); // Default to Alpha Centauri
+  const [targetStar, setTargetStar] = useState(REAL_STARS[1]); 
   const [isNavLocked, setIsNavLocked] = useState(false);
 
   // 64-bit Engine State
@@ -36,14 +34,12 @@ export default function DeepSpaceEngine() {
     clocks: { universe: 0, ship: 0 }
   });
 
-  // Keep refs synced for the animation loop
   const navLockRef = useRef(isNavLocked);
   const targetStarRef = useRef(targetStar);
   
   useEffect(() => { navLockRef.current = isNavLocked; }, [isNavLocked]);
   useEffect(() => { targetStarRef.current = targetStar; }, [targetStar]);
 
-  // Background "Dust" (Motion Reference)
   const bgDust = useRef(Array.from({ length: 4000 }, () => ({
     x: (Math.random() - 0.5) * 200,
     y: (Math.random() - 0.5) * 200,
@@ -51,7 +47,7 @@ export default function DeepSpaceEngine() {
     alpha: Math.random() * 0.5 + 0.1
   })));
 
-  // Smooth Input Handling
+  // --- CONTROLS FIX: Standard FPS Steering Restored ---
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
     engineState.current.mouse.lastX = e.clientX;
@@ -60,22 +56,35 @@ export default function DeepSpaceEngine() {
   const handleMouseUp = () => { engineState.current.mouse.isDown = false; };
   const handleMouseMove = (e: React.MouseEvent) => {
     const mouse = engineState.current.mouse;
-    if (!mouse.isDown || isNavLocked) return; // Prevent manual steering if Nav-Lock is engaged
+    if (!mouse.isDown || isNavLocked) return; 
     
     const dx = e.clientX - mouse.lastX;
     const dy = e.clientY - mouse.lastY;
-    engineState.current.camera.targetYaw -= dx * 0.003;
+    
+    // Fixed Horizontal Math: Drag Left = Turn Left (+dx instead of -dx)
+    engineState.current.camera.targetYaw += dx * 0.003;
     engineState.current.camera.targetPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.targetPitch - dy * 0.003));
+    
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
   };
 
-  // Auto-Align & Lock
   const engageNavLock = (starId: string) => {
     const target = REAL_STARS.find(s => s.id === starId);
     if (!target) return;
     setTargetStar(target);
-    setIsNavLocked(true); // Locks the camera tracking
+    setIsNavLocked(true); 
+  };
+
+  // --- MASTER RESET SWITCH ---
+  const resetEngine = () => {
+    engineState.current.ship = { x: 0, y: 0.001, z: -1.0 };
+    engineState.current.camera = { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 };
+    engineState.current.clocks = { universe: 0, ship: 0 };
+    setVelocityC(0);
+    setTimeMultiplier(1);
+    setIsNavLocked(false);
+    setTargetStar(REAL_STARS[1]); 
   };
 
   useEffect(() => {
@@ -101,7 +110,7 @@ export default function DeepSpaceEngine() {
       let ty = dy * Math.cos(state.camera.pitch) - tz * Math.sin(state.camera.pitch);
       let fz = dy * Math.sin(state.camera.pitch) + tz * Math.cos(state.camera.pitch);
 
-      if (fz < 0.000001) return null; // Avoid division by zero
+      if (fz < 0.000001) return null; 
 
       const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
       const scale = (width / 2) * (1 / fz) * aberration;
@@ -112,7 +121,6 @@ export default function DeepSpaceEngine() {
     const animate = () => {
       const state = engineState.current;
       
-      // AUTO-ALIGN LOGIC: If Nav-Lock is active, constantly update target pitch/yaw to point exactly at the star
       if (navLockRef.current) {
         const tgt = targetStarRef.current;
         const dx = tgt.x - state.ship.x;
@@ -123,20 +131,17 @@ export default function DeepSpaceEngine() {
         state.camera.targetPitch = Math.atan2(dy, distanceXZ);
       }
 
-      // Camera Lerp (Smooth physical gliding)
       state.camera.yaw += (state.camera.targetYaw - state.camera.yaw) * 0.1;
       state.camera.pitch += (state.camera.targetPitch - state.camera.pitch) * 0.1;
 
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
-      // Time & Relativity
       const gamma = 1 / Math.sqrt(1 - Math.pow(velocityC, 2));
       const deltaYears = dtBase * timeMultiplier;
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
-      // True Physical Movement
       if (velocityC > 0) {
         const moveDist = velocityC * deltaYears; 
         state.ship.x += Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
@@ -144,7 +149,6 @@ export default function DeepSpaceEngine() {
         state.ship.z += Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
       }
 
-      // Calculate Distances
       const currentDistances: Record<string, number> = {};
       REAL_STARS.forEach(star => {
         const dx = star.x - state.ship.x;
@@ -158,7 +162,6 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: state.clocks.universe, shipYears: state.clocks.ship });
       }
 
-      // 1. Draw Background Dust
       bgDust.current.forEach(dust => {
         if (velocityC > 0) {
            const moveDist = velocityC * deltaYears * 10; 
@@ -178,38 +181,31 @@ export default function DeepSpaceEngine() {
         }
       });
 
-      // 2. Draw Real Targetable Stars (TRUE OPTICAL SCALING)
       REAL_STARS.forEach(star => {
         const proj = project(star.x, star.y, star.z, velocityC);
         
         if (proj) {
-          // Mathematically clamp the visual size so distant stars are exactly 1 pixel
-          // 0.0005 multiplier ensures they only expand when you get extremely close (e.g., < 0.05 LY)
           const cinematicScale = star.radius * 0.0005;
           const coreRadius = Math.max(1, Math.min(width * 0.4, cinematicScale * proj.scale));
           const glowRadius = Math.max(2, coreRadius * 3);
 
           if (proj.dist > 0.0001) {
-             // Glow
              const gradient = ctx.createRadialGradient(proj.sx, proj.sy, coreRadius, proj.sx, proj.sy, glowRadius);
              gradient.addColorStop(0, `${star.color}90`); 
              gradient.addColorStop(1, "rgba(0,0,0,0)");
              ctx.fillStyle = gradient;
              ctx.beginPath(); ctx.arc(proj.sx, proj.sy, glowRadius, 0, Math.PI * 2); ctx.fill();
 
-             // Solid Core
              ctx.fillStyle = "#ffffff";
              ctx.beginPath(); ctx.arc(proj.sx, proj.sy, coreRadius, 0, Math.PI * 2); ctx.fill();
           }
 
-          // Dynamic Labeling: Show label if close, OR if it is the actively targeted star
           if ((proj.dist < 100 && proj.dist > 0.1) || star.id === targetStarRef.current.id) {
             ctx.fillStyle = star.id === targetStarRef.current.id ? "rgba(34, 211, 238, 0.9)" : "rgba(255,255,255,0.5)";
             ctx.font = star.id === targetStarRef.current.id ? "bold 12px monospace" : "10px monospace";
             ctx.fillText(star.name, proj.sx + glowRadius + 5, proj.sy + 3);
           }
 
-          // Render Nav-Lock Reticle around the target star
           if (star.id === targetStarRef.current.id && navLockRef.current) {
             ctx.strokeStyle = "rgba(34, 211, 238, 0.8)";
             ctx.lineWidth = 1;
@@ -217,7 +213,6 @@ export default function DeepSpaceEngine() {
             ctx.arc(proj.sx, proj.sy, glowRadius + 15, 0, Math.PI * 2);
             ctx.stroke();
             
-            // Reticle tick marks
             ctx.beginPath();
             ctx.moveTo(proj.sx, proj.sy - glowRadius - 20); ctx.lineTo(proj.sx, proj.sy - glowRadius - 10);
             ctx.moveTo(proj.sx, proj.sy + glowRadius + 20); ctx.lineTo(proj.sx, proj.sy + glowRadius + 10);
@@ -248,6 +243,16 @@ export default function DeepSpaceEngine() {
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
+      {/* HEADER: EMERGENCY RESET */}
+      <header className="absolute top-6 left-6 z-10">
+         <button 
+            onClick={resetEngine}
+            className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all"
+          >
+            System Override: Reset Origin
+         </button>
+      </header>
+
       {/* CROSSHAIR */}
       {!isNavLocked && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-30">
@@ -256,13 +261,13 @@ export default function DeepSpaceEngine() {
         </div>
       )}
 
-      {/* RIGHT PANEL: LIVE DISTANCE MATRIX TO ALL STARS */}
+      {/* RIGHT PANEL */}
       <aside className="absolute top-6 right-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-lg pointer-events-auto shadow-2xl max-h-[85vh] flex flex-col z-10">
         <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
           <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest">Targeting Matrix</h2>
           <button 
             onClick={() => setIsNavLocked(false)}
-            className={`text-[9px] px-2 py-1 rounded uppercase transition-colors ${isNavLocked ? "bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/40" : "bg-neutral-800 text-neutral-500 border border-neutral-700"}`}
+            className={`text-[9px] px-2 py-1 rounded uppercase transition-colors ${isNavLocked ? "bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/40" : "bg-neutral-800 text-neutral-500 border border-neutral-700 hover:bg-neutral-700"}`}
           >
             {isNavLocked ? "Unlock Camera" : "Manual Flight"}
           </button>
@@ -292,7 +297,7 @@ export default function DeepSpaceEngine() {
         </div>
       </aside>
 
-      {/* BOTTOM PANEL: FLIGHT CONTROLS & RELATIVITY */}
+      {/* BOTTOM PANEL */}
       <footer className="absolute bottom-6 left-6 w-[500px] bg-black/80 backdrop-blur-3xl border border-white/10 p-6 rounded-xl pointer-events-auto shadow-2xl z-10">
         
         {isNavLocked && (
