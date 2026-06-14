@@ -2,9 +2,6 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // --- THE ASTROPHYSICS DATABASE ---
-// Coordinates are in exact Light Years (LY).
-// Planet distances (d) are in exact Astronomical Units (AU).
-// Mass is in Solar Masses (M☉).
 const STAR_SYSTEMS = [
   {
     id: "SOL", name: "Sol (Our System)", x: 0, y: 0, z: 0, mass: 1.0, color: "#fef08a",
@@ -37,37 +34,38 @@ const STAR_SYSTEMS = [
   }
 ];
 
-const LY_TO_AU = 63241.077; // 1 Light Year = 63,241 AU
+const LY_TO_AU = 63241.077; 
 
 export default function RelativisticUniverse() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  // Physics Controls
-  const [velocityC, setVelocityC] = useState(0); // v/c (0 to 0.999)
-  const [timeMultiplier, setTimeMultiplier] = useState(1); // 1x to 10000x
+  const [velocityC, setVelocityC] = useState(0); 
+  const [timeMultiplier, setTimeMultiplier] = useState(1); 
   
-  // HUD Telemetry
   const [telemetry, setTelemetry] = useState({ 
-    universeYears: 0, 
-    shipYears: 0, 
-    gamma: 1, 
-    distance: 0, 
-    zoom: 1 
+    universeYears: 0, shipYears: 0, gamma: 1, distance: 0, zoom: 1 
   });
 
-  // Target Autopilot
   const [targetStar, setTargetStar] = useState(STAR_SYSTEMS[0]);
 
-  // Persistent Engine State (Bypassing React re-renders for 120fps physics)
+  // Persistent Engine State
   const engineState = useRef({
-    ship: { x: 0, y: 0, z: -0.1 }, // Start slightly outside Sol to look at it
+    ship: { x: 0, y: 0, z: -0.5 }, // Start slightly backed up from the Sun
     camera: { pitch: 0, yaw: 0, zoomExp: 0, zoomRaw: 1 },
     mouse: { isDown: false, lastX: 0, lastY: 0 },
     clocks: { universe: 0, ship: 0 },
     planetAngles: new Map<string, number>()
   });
 
-  // Input Handlers
+  // Background Starfield Generator (Fixes the "Blank Screen" issue)
+  const bgStars = useRef(Array.from({ length: 3000 }, () => ({
+    x: (Math.random() - 0.5) * 1000,
+    y: (Math.random() - 0.5) * 1000,
+    z: (Math.random() - 0.5) * 1000,
+    size: Math.random() * 0.8 + 0.2,
+    alpha: Math.random() * 0.5 + 0.1
+  })));
+
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
     engineState.current.mouse.lastX = e.clientX;
@@ -88,13 +86,17 @@ export default function RelativisticUniverse() {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    // Logarithmic Zoom: Allows zooming from 1x (Galactic) to 100,000x (Planetary AU)
     const cam = engineState.current.camera;
     cam.zoomExp = Math.max(0, Math.min(12, cam.zoomExp - e.deltaY * 0.005));
     cam.zoomRaw = Math.exp(cam.zoomExp);
   };
 
-  // --- 64-BIT DOUBLE PRECISION PHYSICS & RENDERING LOOP ---
+  // Center Camera on Target
+  const centerCamera = () => {
+    engineState.current.camera.yaw = 0;
+    engineState.current.camera.pitch = 0;
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -104,32 +106,28 @@ export default function RelativisticUniverse() {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
     let reqId: number;
-    let lastTime = performance.now();
 
-    const dtBase = 0.001; // Base time step in years per frame at 1x multiplier
+    const dtBase = 0.001; 
 
-    // 3D to 2D Projection with Relativistic Aberration
-    const project = (x: number, y: number, z: number, v_c: number) => {
+    const project = (x: number, y: number, z: number, v_c: number, isBackground = false) => {
       const state = engineState.current;
       
-      // Translate to ship-relative origin
-      let dx = x - state.ship.x;
-      let dy = y - state.ship.y;
-      let dz = z - state.ship.z;
+      let dx = x - (isBackground ? 0 : state.ship.x);
+      let dy = y - (isBackground ? 0 : state.ship.y);
+      let dz = z - (isBackground ? 0 : state.ship.z);
 
-      // Rotate Camera Yaw & Pitch
       let tx = dx * Math.cos(state.camera.yaw) - dz * Math.sin(state.camera.yaw);
       let tz = dx * Math.sin(state.camera.yaw) + dz * Math.cos(state.camera.yaw);
       let ty = dy * Math.cos(state.camera.pitch) - tz * Math.sin(state.camera.pitch);
       let fz = dy * Math.sin(state.camera.pitch) + tz * Math.cos(state.camera.pitch);
 
-      if (fz < 0.0001) return null; // Behind camera plane
+      if (fz < 0.0001) return null; 
 
-      // Relativistic visual narrowing of Field of View as you approach c
       const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
       
-      // Scale is exponentially driven by the mouse wheel
-      const scale = (width / 2) * (state.camera.zoomRaw / fz) * aberration;
+      // Background stars ignore zoom so they stay distant
+      const activeZoom = isBackground ? 1 : state.camera.zoomRaw;
+      const scale = (width / 2) * (activeZoom / fz) * aberration;
 
       return {
         sx: width / 2 + tx * scale,
@@ -139,20 +137,17 @@ export default function RelativisticUniverse() {
       };
     };
 
-    const animate = (now: number) => {
+    const animate = () => {
       const state = engineState.current;
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
-      // --- 1. RELATIVISTIC KINEMATICS ---
       const gamma = 1 / Math.sqrt(1 - Math.pow(velocityC, 2));
       const deltaYears = dtBase * timeMultiplier;
       
-      // Update Timelines (The weight of years)
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
-      // Autopilot Navigation
       let distToTarget = 0;
       if (velocityC > 0) {
         const tx = targetStar.x - state.ship.x;
@@ -160,9 +155,8 @@ export default function RelativisticUniverse() {
         const tz = targetStar.z - state.ship.z;
         distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
         
-        if (distToTarget > 0.001) { // If not arrived
-          // Move ship along vector in Light Years
-          const moveDist = velocityC * deltaYears; // c = 1 LY/year
+        if (distToTarget > 0.001) {
+          const moveDist = velocityC * deltaYears; 
           state.ship.x += (tx / distToTarget) * moveDist;
           state.ship.y += (ty / distToTarget) * moveDist;
           state.ship.z += (tz / distToTarget) * moveDist;
@@ -174,7 +168,6 @@ export default function RelativisticUniverse() {
         distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
       }
 
-      // Sync telemetry to React UI every few frames to avoid lag
       if (Math.random() < 0.1) {
         setTelemetry({
           universeYears: state.clocks.universe,
@@ -185,46 +178,53 @@ export default function RelativisticUniverse() {
         });
       }
 
-      // --- 2. RENDER UNIVERSE (64-BIT PRECISION) ---
+      // 1. Draw Background Stars First
+      bgStars.current.forEach(star => {
+        // Create an illusion of infinite flight by looping background stars towards you
+        if (velocityC > 0) {
+           star.z -= velocityC * 5;
+           if (star.z < -500) star.z = 500;
+        }
+
+        const proj = project(star.x, star.y, star.z, velocityC, true);
+        if (proj) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
+          ctx.fillRect(proj.sx, proj.sy, Math.max(1, star.size * proj.scale), Math.max(1, star.size * proj.scale));
+        }
+      });
+
+      // 2. Draw Real Star Systems
       STAR_SYSTEMS.forEach(star => {
         const starProj = project(star.x, star.y, star.z, velocityC);
         
         if (starProj) {
-          // Draw Star
-          const size = Math.max(1, 10 * starProj.scale);
+          const size = Math.max(2, 5 * starProj.scale); // Make stars slightly larger to easily spot
           const gradient = ctx.createRadialGradient(starProj.sx, starProj.sy, 0, starProj.sx, starProj.sy, size * 2);
           gradient.addColorStop(0, star.color);
           gradient.addColorStop(1, "rgba(0,0,0,0)");
           ctx.fillStyle = gradient;
           ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, size * 2, 0, Math.PI * 2); ctx.fill();
 
-          // Draw Label if close enough or zoomed out
           if (starProj.dist < 50 || state.camera.zoomRaw < 10) {
-            ctx.fillStyle = "rgba(255,255,255,0.7)";
-            ctx.font = "10px monospace";
+            ctx.fillStyle = "rgba(255,255,255,0.9)";
+            ctx.font = "12px monospace";
             ctx.fillText(star.name, starProj.sx + size + 5, starProj.sy);
           }
         }
 
-        // --- 3. KEPLERIAN ORBITAL MECHANICS (Micro Scale) ---
-        // Only calculate and render planets if we are close to the star or heavily zoomed in
+        // 3. Draw Planets
         const distToCamera = Math.sqrt(Math.pow(star.x - state.ship.x, 2) + Math.pow(star.y - state.ship.y, 2) + Math.pow(star.z - state.ship.z, 2));
         
-        if (distToCamera < 0.5 || state.camera.zoomRaw > 1000) {
+        if (distToCamera < 1 || state.camera.zoomRaw > 100) {
           star.planets.forEach(p => {
             const planetId = `${star.id}-${p.name}`;
             if (!state.planetAngles.has(planetId)) state.planetAngles.set(planetId, Math.random() * Math.PI * 2);
             
-            // Kepler's Third Law: T = sqrt(a^3 / M)
-            // T is period in Earth Years.
             const periodYears = Math.sqrt(Math.pow(p.d, 3) / star.mass);
-            
-            // Update angle based on accurate UNIVERSE TIME elapsed
             let currentAngle = state.planetAngles.get(planetId)!;
             currentAngle += (deltaYears / periodYears) * Math.PI * 2;
             state.planetAngles.set(planetId, currentAngle);
 
-            // Convert AU distance to Light Years for the master 3D grid
             const radiusInLY = p.d / LY_TO_AU;
             const px = star.x + radiusInLY * Math.cos(currentAngle);
             const pz = star.z + radiusInLY * Math.sin(currentAngle);
@@ -232,13 +232,11 @@ export default function RelativisticUniverse() {
 
             const pProj = project(px, py, pz, velocityC);
             if (pProj) {
-              // Draw Planet
-              const pSize = Math.max(0.5, p.r * pProj.scale * 0.0001); // Scale radius visually
+              const pSize = Math.max(1.5, p.r * pProj.scale * 0.0005); 
               ctx.fillStyle = p.color;
               ctx.beginPath(); ctx.arc(pProj.sx, pProj.sy, pSize, 0, Math.PI * 2); ctx.fill();
               
-              // Draw Orbit Ring (Optional, fades in when zoomed)
-              if (state.camera.zoomRaw > 5000) {
+              if (state.camera.zoomRaw > 2000) {
                 ctx.beginPath();
                 for (let a = 0; a <= Math.PI * 2; a += 0.1) {
                   const ringX = star.x + radiusInLY * Math.cos(a);
@@ -249,12 +247,11 @@ export default function RelativisticUniverse() {
                     else ctx.lineTo(ringProj.sx, ringProj.sy);
                   }
                 }
-                ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.stroke();
+                ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.stroke();
                 
-                // Planet Label
-                ctx.fillStyle = "rgba(255,255,255,0.4)";
-                ctx.font = "8px monospace";
-                ctx.fillText(p.name, pProj.sx + pSize + 2, pProj.sy + 2);
+                ctx.fillStyle = "rgba(255,255,255,0.7)";
+                ctx.font = "10px monospace";
+                ctx.fillText(p.name, pProj.sx + pSize + 4, pProj.sy + 4);
               }
             }
           });
@@ -264,7 +261,7 @@ export default function RelativisticUniverse() {
       reqId = requestAnimationFrame(animate);
     };
 
-    reqId = requestAnimationFrame(performance.now);
+    reqId = requestAnimationFrame(animate);
 
     const handleResize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
     window.addEventListener("resize", handleResize);
@@ -282,10 +279,12 @@ export default function RelativisticUniverse() {
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
-      {/* TARGETING HUD - LEFT */}
-      <aside className="absolute top-6 left-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-lg pointer-events-auto">
+      <aside className="absolute top-6 left-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-lg pointer-events-auto shadow-2xl">
         <p className="text-[10px] uppercase tracking-widest text-cyan-400 mb-4 animate-pulse">Nav-Computer Online</p>
-        <h2 className="text-xl font-bold mb-4 border-b border-white/10 pb-4">Select Coordinates</h2>
+        <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
+           <h2 className="text-xl font-bold">Coordinates</h2>
+           <button onClick={centerCamera} className="text-[10px] uppercase border border-white/20 px-2 py-1 rounded hover:bg-white/10">Re-Center Camera</button>
+        </div>
         
         <div className="space-y-2 mb-6">
           {STAR_SYSTEMS.map(sys => (
@@ -306,11 +305,9 @@ export default function RelativisticUniverse() {
         </div>
       </aside>
 
-      {/* RELATIVISTIC PHYSICS CONTROLS - BOTTOM */}
       <footer className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-3xl bg-black/80 backdrop-blur-3xl border border-white/10 p-8 rounded-2xl pointer-events-auto shadow-2xl">
         <div className="grid grid-cols-2 gap-12">
           
-          {/* THROTTLE (c) */}
           <div className="flex flex-col gap-2">
             <div className="flex justify-between">
               <span className="text-[10px] uppercase tracking-widest text-neutral-500">Sub-light Throttle</span>
@@ -327,7 +324,6 @@ export default function RelativisticUniverse() {
             </p>
           </div>
 
-          {/* TIME MULTIPLIER */}
           <div className="flex flex-col gap-2">
             <div className="flex justify-between">
               <span className="text-[10px] uppercase tracking-widest text-neutral-500">Universe Time Multiplier</span>
@@ -346,7 +342,6 @@ export default function RelativisticUniverse() {
 
         </div>
 
-        {/* RELATIVISTIC CHRONOMETER (The Weight of Years) */}
         <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-3 gap-4">
           <div>
             <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">Lorentz Factor (γ)</p>
@@ -363,7 +358,6 @@ export default function RelativisticUniverse() {
         </div>
       </footer>
 
-      {/* CAMERA INFO - TOP RIGHT */}
       <div className="absolute top-6 right-6 text-right pointer-events-none">
         <p className="text-[10px] uppercase tracking-widest text-neutral-500">Camera Mag-Level</p>
         <p className="text-lg font-bold text-white">{telemetry.zoom.toLocaleString(undefined, {maximumFractionDigits:0})}x</p>
