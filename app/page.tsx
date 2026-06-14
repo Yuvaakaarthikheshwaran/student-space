@@ -35,8 +35,9 @@ const STAR_SYSTEMS = [
 ];
 
 const LY_TO_AU = 63241.077; 
+const AU_IN_LY = 1 / LY_TO_AU; // ~0.0000158
 
-export default function RelativisticUniverse() {
+export default function SeamlessRelativisticEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   const [velocityC, setVelocityC] = useState(0); 
@@ -50,15 +51,21 @@ export default function RelativisticUniverse() {
 
   // Persistent Engine State
   const engineState = useRef({
-    ship: { x: 0, y: 0, z: -0.5 }, // Start slightly backed up from the Sun
-    camera: { pitch: 0, yaw: 0, zoomExp: 0, zoomRaw: 1 },
+    // NEW SPAWN POINT: Exactly 2.0 AU away from the Sun (Sol)
+    ship: { x: 0, y: 0.000005, z: -(2.0 * AU_IN_LY) }, 
+    
+    // CAMERA LERP SYSTEM (Smooth Damping)
+    camera: { 
+        pitch: 0, yaw: 0, 
+        targetPitch: 0.05, targetYaw: 0, // Targets for the Lerp function
+        zoomExp: 0, zoomRaw: 1 
+    },
     mouse: { isDown: false, lastX: 0, lastY: 0 },
     clocks: { universe: 0, ship: 0 },
     planetAngles: new Map<string, number>()
   });
 
-  // Background Starfield Generator (Fixes the "Blank Screen" issue)
-  const bgStars = useRef(Array.from({ length: 3000 }, () => ({
+  const bgStars = useRef(Array.from({ length: 4000 }, () => ({
     x: (Math.random() - 0.5) * 1000,
     y: (Math.random() - 0.5) * 1000,
     z: (Math.random() - 0.5) * 1000,
@@ -66,6 +73,7 @@ export default function RelativisticUniverse() {
     alpha: Math.random() * 0.5 + 0.1
   })));
 
+  // SMOOTH INPUT HANDLING
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
     engineState.current.mouse.lastX = e.clientX;
@@ -79,22 +87,24 @@ export default function RelativisticUniverse() {
     if (!mouse.isDown) return;
     const dx = e.clientX - mouse.lastX;
     const dy = e.clientY - mouse.lastY;
-    engineState.current.camera.yaw -= dx * 0.005;
-    engineState.current.camera.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.pitch - dy * 0.005));
+    
+    // We update TARGETS, not the actual camera. This allows smooth gliding.
+    engineState.current.camera.targetYaw -= dx * 0.003;
+    engineState.current.camera.targetPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.targetPitch - dy * 0.003));
+    
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
     const cam = engineState.current.camera;
-    cam.zoomExp = Math.max(0, Math.min(12, cam.zoomExp - e.deltaY * 0.005));
+    cam.zoomExp = Math.max(0, Math.min(15, cam.zoomExp - e.deltaY * 0.005));
     cam.zoomRaw = Math.exp(cam.zoomExp);
   };
 
-  // Center Camera on Target
   const centerCamera = () => {
-    engineState.current.camera.yaw = 0;
-    engineState.current.camera.pitch = 0;
+    engineState.current.camera.targetYaw = 0;
+    engineState.current.camera.targetPitch = 0;
   };
 
   useEffect(() => {
@@ -106,7 +116,6 @@ export default function RelativisticUniverse() {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
     let reqId: number;
-
     const dtBase = 0.001; 
 
     const project = (x: number, y: number, z: number, v_c: number, isBackground = false) => {
@@ -121,24 +130,23 @@ export default function RelativisticUniverse() {
       let ty = dy * Math.cos(state.camera.pitch) - tz * Math.sin(state.camera.pitch);
       let fz = dy * Math.sin(state.camera.pitch) + tz * Math.cos(state.camera.pitch);
 
-      if (fz < 0.0001) return null; 
+      // NEAR-PLANE CULLING FIX: Prevents math exploding when too close
+      if (fz < 0.000001) return null; 
 
       const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
-      
-      // Background stars ignore zoom so they stay distant
       const activeZoom = isBackground ? 1 : state.camera.zoomRaw;
       const scale = (width / 2) * (activeZoom / fz) * aberration;
 
-      return {
-        sx: width / 2 + tx * scale,
-        sy: height / 2 + ty * scale,
-        scale: scale,
-        dist: fz
-      };
+      return { sx: width / 2 + tx * scale, sy: height / 2 + ty * scale, scale: scale, dist: fz };
     };
 
     const animate = () => {
       const state = engineState.current;
+      
+      // APPLY CAMERA LERP (The Butter-Smooth Feel)
+      state.camera.yaw += (state.camera.targetYaw - state.camera.yaw) * 0.1;
+      state.camera.pitch += (state.camera.targetPitch - state.camera.pitch) * 0.1;
+
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
@@ -148,44 +156,33 @@ export default function RelativisticUniverse() {
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
+      // AUTOPILOT NAVIGATION
       let distToTarget = 0;
-      if (velocityC > 0) {
-        const tx = targetStar.x - state.ship.x;
-        const ty = targetStar.y - state.ship.y;
-        const tz = targetStar.z - state.ship.z;
-        distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
-        
-        if (distToTarget > 0.001) {
-          const moveDist = velocityC * deltaYears; 
-          state.ship.x += (tx / distToTarget) * moveDist;
-          state.ship.y += (ty / distToTarget) * moveDist;
-          state.ship.z += (tz / distToTarget) * moveDist;
-        }
-      } else {
-        const tx = targetStar.x - state.ship.x;
-        const ty = targetStar.y - state.ship.y;
-        const tz = targetStar.z - state.ship.z;
-        distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
+      const tx = targetStar.x - state.ship.x;
+      const ty = targetStar.y - state.ship.y;
+      const tz = targetStar.z - state.ship.z;
+      distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
+
+      if (velocityC > 0 && distToTarget > 0.00001) {
+        const moveDist = velocityC * deltaYears; 
+        state.ship.x += (tx / distToTarget) * moveDist;
+        state.ship.y += (ty / distToTarget) * moveDist;
+        state.ship.z += (tz / distToTarget) * moveDist;
       }
 
       if (Math.random() < 0.1) {
         setTelemetry({
-          universeYears: state.clocks.universe,
-          shipYears: state.clocks.ship,
-          gamma: gamma,
-          distance: distToTarget,
-          zoom: state.camera.zoomRaw
+          universeYears: state.clocks.universe, shipYears: state.clocks.ship,
+          gamma: gamma, distance: distToTarget, zoom: state.camera.zoomRaw
         });
       }
 
-      // 1. Draw Background Stars First
+      // 1. BACKGROUND STARS
       bgStars.current.forEach(star => {
-        // Create an illusion of infinite flight by looping background stars towards you
         if (velocityC > 0) {
            star.z -= velocityC * 5;
            if (star.z < -500) star.z = 500;
         }
-
         const proj = project(star.x, star.y, star.z, velocityC, true);
         if (proj) {
           ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
@@ -193,29 +190,41 @@ export default function RelativisticUniverse() {
         }
       });
 
-      // 2. Draw Real Star Systems
+      // 2. STARS (WITH YELLOW SCREEN FIX)
       STAR_SYSTEMS.forEach(star => {
         const starProj = project(star.x, star.y, star.z, velocityC);
         
         if (starProj) {
-          const size = Math.max(2, 5 * starProj.scale); // Make stars slightly larger to easily spot
-          const gradient = ctx.createRadialGradient(starProj.sx, starProj.sy, 0, starProj.sx, starProj.sy, size * 2);
-          gradient.addColorStop(0, star.color);
-          gradient.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.fillStyle = gradient;
-          ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, size * 2, 0, Math.PI * 2); ctx.fill();
+          const rawBaseSize = 5 * starProj.scale;
+          // CLAMPING: Prevent the star from becoming infinitely large and washing out the screen
+          const coreRadius = Math.min(width * 0.4, rawBaseSize); 
+          const glowRadius = Math.min(width * 1.5, rawBaseSize * 3);
 
-          if (starProj.dist < 50 || state.camera.zoomRaw < 10) {
+          if (starProj.dist > 0.000005) {
+             // Draw Corona Glow
+             const gradient = ctx.createRadialGradient(starProj.sx, starProj.sy, coreRadius, starProj.sx, starProj.sy, glowRadius);
+             gradient.addColorStop(0, `${star.color}90`); // 90 is hex alpha (slightly transparent)
+             gradient.addColorStop(1, "rgba(0,0,0,0)");
+             ctx.fillStyle = gradient;
+             ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, glowRadius, 0, Math.PI * 2); ctx.fill();
+
+             // Draw Solid Hot Core
+             ctx.fillStyle = "#ffffff";
+             ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, coreRadius, 0, Math.PI * 2); ctx.fill();
+          }
+
+          // Labels disappear when you get too close so they don't block the screen
+          if (starProj.dist < 50 && starProj.dist > 0.001) {
             ctx.fillStyle = "rgba(255,255,255,0.9)";
             ctx.font = "12px monospace";
-            ctx.fillText(star.name, starProj.sx + size + 5, starProj.sy);
+            ctx.fillText(star.name, starProj.sx + coreRadius + 15, starProj.sy);
           }
         }
 
-        // 3. Draw Planets
+        // 3. PLANETARY ORBITS (No more infinite zooming glitches)
         const distToCamera = Math.sqrt(Math.pow(star.x - state.ship.x, 2) + Math.pow(star.y - state.ship.y, 2) + Math.pow(star.z - state.ship.z, 2));
         
-        if (distToCamera < 1 || state.camera.zoomRaw > 100) {
+        if (distToCamera < 0.1 || state.camera.zoomRaw > 100) {
           star.planets.forEach(p => {
             const planetId = `${star.id}-${p.name}`;
             if (!state.planetAngles.has(planetId)) state.planetAngles.set(planetId, Math.random() * Math.PI * 2);
@@ -225,18 +234,19 @@ export default function RelativisticUniverse() {
             currentAngle += (deltaYears / periodYears) * Math.PI * 2;
             state.planetAngles.set(planetId, currentAngle);
 
-            const radiusInLY = p.d / LY_TO_AU;
+            const radiusInLY = p.d * AU_IN_LY;
             const px = star.x + radiusInLY * Math.cos(currentAngle);
             const pz = star.z + radiusInLY * Math.sin(currentAngle);
             const py = star.y;
 
             const pProj = project(px, py, pz, velocityC);
             if (pProj) {
-              const pSize = Math.max(1.5, p.r * pProj.scale * 0.0005); 
+              // Clamp planet size so they don't consume the screen either
+              const pSize = Math.min(width * 0.2, Math.max(1.5, p.r * pProj.scale * 0.0005)); 
               ctx.fillStyle = p.color;
               ctx.beginPath(); ctx.arc(pProj.sx, pProj.sy, pSize, 0, Math.PI * 2); ctx.fill();
               
-              if (state.camera.zoomRaw > 2000) {
+              if (state.camera.zoomRaw > 500 || distToCamera < 0.001) {
                 ctx.beginPath();
                 for (let a = 0; a <= Math.PI * 2; a += 0.1) {
                   const ringX = star.x + radiusInLY * Math.cos(a);
@@ -251,7 +261,7 @@ export default function RelativisticUniverse() {
                 
                 ctx.fillStyle = "rgba(255,255,255,0.7)";
                 ctx.font = "10px monospace";
-                ctx.fillText(p.name, pProj.sx + pSize + 4, pProj.sy + 4);
+                ctx.fillText(p.name, pProj.sx + pSize + 6, pProj.sy + 4);
               }
             }
           });
@@ -283,7 +293,7 @@ export default function RelativisticUniverse() {
         <p className="text-[10px] uppercase tracking-widest text-cyan-400 mb-4 animate-pulse">Nav-Computer Online</p>
         <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
            <h2 className="text-xl font-bold">Coordinates</h2>
-           <button onClick={centerCamera} className="text-[10px] uppercase border border-white/20 px-2 py-1 rounded hover:bg-white/10">Re-Center Camera</button>
+           <button onClick={centerCamera} className="text-[10px] uppercase border border-white/20 px-2 py-1 rounded hover:bg-white/10 transition-colors">Align Forward</button>
         </div>
         
         <div className="space-y-2 mb-6">
@@ -300,7 +310,7 @@ export default function RelativisticUniverse() {
 
         <div className="bg-white/5 p-4 rounded border border-white/5">
           <p className="text-[10px] uppercase text-neutral-500 mb-1">Target Distance</p>
-          <p className="text-lg font-bold text-white">{telemetry.distance.toFixed(4)} LY</p>
+          <p className="text-lg font-bold text-white">{telemetry.distance.toFixed(6)} LY</p>
           <p className="text-[10px] text-neutral-500 mt-2">({(telemetry.distance * LY_TO_AU).toLocaleString(undefined, {maximumFractionDigits:0})} AU)</p>
         </div>
       </aside>
@@ -319,9 +329,6 @@ export default function RelativisticUniverse() {
               onChange={(e) => setVelocityC(parseFloat(e.target.value))}
               className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-cyan-400"
             />
-            <p className="text-[9px] text-neutral-500 leading-tight mt-1">
-              Accelerating alters Lorentz factor ($\gamma$). Visually contracts FOV due to relativistic aberration.
-            </p>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -335,9 +342,6 @@ export default function RelativisticUniverse() {
               onChange={(e) => setTimeMultiplier(parseFloat(e.target.value))}
               className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-purple-400"
             />
-            <p className="text-[9px] text-neutral-500 leading-tight mt-1">
-              Fast-forwards universal simulation. Watch Keplerian orbits accelerate.
-            </p>
           </div>
 
         </div>
@@ -357,13 +361,6 @@ export default function RelativisticUniverse() {
           </div>
         </div>
       </footer>
-
-      <div className="absolute top-6 right-6 text-right pointer-events-none">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500">Camera Mag-Level</p>
-        <p className="text-lg font-bold text-white">{telemetry.zoom.toLocaleString(undefined, {maximumFractionDigits:0})}x</p>
-        <p className="text-[10px] text-neutral-500 mt-1">Scroll wheel to zoom across 64-bit scale</p>
-      </div>
-
     </main>
   );
 }
