@@ -2,96 +2,99 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // --- THE ASTROPHYSICS DATABASE ---
-// Real-world distances are scaled for the map. 1 Map Unit = ~1 Light Year
+// Coordinates are in exact Light Years (LY).
+// Planet distances (d) are in exact Astronomical Units (AU).
+// Mass is in Solar Masses (M☉).
 const STAR_SYSTEMS = [
   {
-    id: "SOL-01", name: "Solar System (Sol)", type: "G-Type Main Sequence", distance: "0 LY", mass: 1.0, color: "#fef08a",
-    x: 0, y: 0, z: 0,
+    id: "SOL", name: "Sol (Our System)", x: 0, y: 0, z: 0, mass: 1.0, color: "#fef08a",
     planets: [
-      { name: "Mercury", r: 2, d: 20, speed: 0.04, color: "#a3a3a3" },
-      { name: "Venus", r: 4, d: 35, speed: 0.015, color: "#fcd34d" },
-      { name: "Earth", r: 4.2, d: 50, speed: 0.01, color: "#3b82f6" },
-      { name: "Mars", r: 3, d: 70, speed: 0.005, color: "#ef4444" },
-      { name: "Jupiter", r: 12, d: 130, speed: 0.001, color: "#fdba74" }
+      { name: "Mercury", d: 0.387, r: 0.5, color: "#a3a3a3" },
+      { name: "Venus", d: 0.723, r: 1.2, color: "#fcd34d" },
+      { name: "Earth", d: 1.0, r: 1.25, color: "#3b82f6" },
+      { name: "Mars", d: 1.524, r: 0.7, color: "#ef4444" },
+      { name: "Jupiter", d: 5.204, r: 4.0, color: "#fdba74" }
     ]
   },
   {
-    id: "CEN-02", name: "Alpha Centauri System", type: "Triple Star System", distance: "4.37 LY", mass: 2.1, color: "#fde047",
-    x: 40, y: 15, z: -20,
+    id: "CEN", name: "Alpha Centauri", x: 4.37, y: 0, z: 0, mass: 1.1, color: "#fde047",
     planets: [
-      { name: "Alpha Centauri A", r: 15, d: 0, speed: 0, color: "#fef08a" },
-      { name: "Alpha Centauri B", r: 12, d: 40, speed: 0.02, color: "#fdba74" },
-      { name: "Proxima b", r: 4, d: 80, speed: 0.05, color: "#10b981" }
+      { name: "Proxima b", d: 0.048, r: 1.1, color: "#10b981" },
+      { name: "Proxima c", d: 1.48, r: 2.0, color: "#6366f1" }
     ]
   },
   {
-    id: "TRAP-03", name: "TRAPPIST-1", type: "Ultra-cool Dwarf", distance: "39.46 LY", mass: 0.08, color: "#ef4444",
-    x: -80, y: -40, z: 120,
+    id: "TRAP", name: "TRAPPIST-1", x: -20.5, y: -10, z: 32.8, mass: 0.089, color: "#ef4444",
     planets: [
-      { name: "1b", r: 3, d: 15, speed: 0.08, color: "#78716c" },
-      { name: "1c", r: 3.2, d: 22, speed: 0.06, color: "#a8a29e" },
-      { name: "1d", r: 2.5, d: 30, speed: 0.04, color: "#4ade80" },
-      { name: "1e", r: 3.1, d: 38, speed: 0.03, color: "#60a5fa" }
+      { name: "1d", d: 0.022, r: 0.8, color: "#4ade80" },
+      { name: "1e", d: 0.029, r: 0.9, color: "#60a5fa" },
+      { name: "1f", d: 0.038, r: 1.0, color: "#94a3b8" }
     ]
   },
   {
-    id: "SIRI-04", name: "Sirius (Dog Star)", type: "A-Type Main Sequence", distance: "8.6 LY", mass: 2.02, color: "#cffafe",
-    x: -30, y: 50, z: -40,
-    planets: [
-      { name: "Sirius A", r: 20, d: 0, speed: 0, color: "#cffafe" },
-      { name: "Sirius B (White Dwarf)", r: 3, d: 90, speed: 0.01, color: "#ffffff" }
-    ]
+    id: "SIRI", name: "Sirius", x: -4.5, y: 6.2, z: -3.8, mass: 2.02, color: "#cffafe",
+    planets: []
   }
 ];
 
-export default function InterstellarTerminal() {
+const LY_TO_AU = 63241.077; // 1 Light Year = 63,241 AU
+
+export default function RelativisticUniverse() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  // Terminal State
-  const [viewState, setViewState] = useState<"MAP" | "WARP" | "SYSTEM">("MAP");
-  const [activeSystem, setActiveSystem] = useState(STAR_SYSTEMS[0]);
-  const [warpProgress, setWarpProgress] = useState(0);
-  const [cameraRot, setCameraRot] = useState({ pitch: 0.2, yaw: 0 });
+  // Physics Controls
+  const [velocityC, setVelocityC] = useState(0); // v/c (0 to 0.999)
+  const [timeMultiplier, setTimeMultiplier] = useState(1); // 1x to 10000x
+  
+  // HUD Telemetry
+  const [telemetry, setTelemetry] = useState({ 
+    universeYears: 0, 
+    shipYears: 0, 
+    gamma: 1, 
+    distance: 0, 
+    zoom: 1 
+  });
 
-  // Refs for animation loop persistence
-  const viewRef = useRef(viewState);
-  const activeSystemRef = useRef(activeSystem);
-  const frameRef = useRef<number>(0);
-  const mouseRef = useRef({ x: 0, y: 0, isDown: false });
+  // Target Autopilot
+  const [targetStar, setTargetStar] = useState(STAR_SYSTEMS[0]);
 
-  // Sync state to refs for the canvas loop
-  useEffect(() => { viewRef.current = viewState; }, [viewState]);
-  useEffect(() => { activeSystemRef.current = activeSystem; }, [activeSystem]);
+  // Persistent Engine State (Bypassing React re-renders for 120fps physics)
+  const engineState = useRef({
+    ship: { x: 0, y: 0, z: -0.1 }, // Start slightly outside Sol to look at it
+    camera: { pitch: 0, yaw: 0, zoomExp: 0, zoomRaw: 1 },
+    mouse: { isDown: false, lastX: 0, lastY: 0 },
+    clocks: { universe: 0, ship: 0 },
+    planetAngles: new Map<string, number>()
+  });
 
-  // Mouse Handlers for 3D Camera
-  const handleMouseDown = (e: React.MouseEvent) => { mouseRef.current.isDown = true; };
-  const handleMouseUp = () => { mouseRef.current.isDown = false; };
+  // Input Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    engineState.current.mouse.isDown = true;
+    engineState.current.mouse.lastX = e.clientX;
+    engineState.current.mouse.lastY = e.clientY;
+  };
+  
+  const handleMouseUp = () => { engineState.current.mouse.isDown = false; };
+  
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!mouseRef.current.isDown) return;
-    setCameraRot(prev => ({
-      yaw: prev.yaw - e.movementX * 0.005,
-      pitch: Math.max(-Math.PI/2, Math.min(Math.PI/2, prev.pitch - e.movementY * 0.005))
-    }));
+    const mouse = engineState.current.mouse;
+    if (!mouse.isDown) return;
+    const dx = e.clientX - mouse.lastX;
+    const dy = e.clientY - mouse.lastY;
+    engineState.current.camera.yaw -= dx * 0.005;
+    engineState.current.camera.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.pitch - dy * 0.005));
+    mouse.lastX = e.clientX;
+    mouse.lastY = e.clientY;
   };
 
-  const initiateJump = (system: typeof STAR_SYSTEMS[0]) => {
-    setActiveSystem(system);
-    setViewState("WARP");
-    setWarpProgress(0);
-    
-    // Simulate Warp Sequence Time
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 0.01;
-      setWarpProgress(progress);
-      if (progress >= 1) {
-        clearInterval(interval);
-        setViewState("SYSTEM");
-      }
-    }, 30); // ~3 seconds of warp
+  const handleWheel = (e: React.WheelEvent) => {
+    // Logarithmic Zoom: Allows zooming from 1x (Galactic) to 100,000x (Planetary AU)
+    const cam = engineState.current.camera;
+    cam.zoomExp = Math.max(0, Math.min(12, cam.zoomExp - e.deltaY * 0.005));
+    cam.zoomRaw = Math.exp(cam.zoomExp);
   };
 
-  // --- THE MASTER RENDERING ENGINE ---
+  // --- 64-BIT DOUBLE PRECISION PHYSICS & RENDERING LOOP ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -100,256 +103,271 @@ export default function InterstellarTerminal() {
 
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
+    let reqId: number;
+    let lastTime = performance.now();
 
-    // Generate background static stars
-    const staticStars = Array.from({ length: 800 }, () => ({
-      x: (Math.random() - 0.5) * 2000,
-      y: (Math.random() - 0.5) * 2000,
-      z: (Math.random() - 0.5) * 2000,
-      size: Math.random() * 1.5
-    }));
+    const dtBase = 0.001; // Base time step in years per frame at 1x multiplier
 
-    // Local system orbital angles
-    let planetAngles = Array(10).fill(0).map(() => Math.random() * Math.PI * 2);
-
-    // 3D Projection Math
-    const project = (x: number, y: number, z: number) => {
-      let x1 = x * Math.cos(cameraRot.yaw) - z * Math.sin(cameraRot.yaw);
-      let z1 = x * Math.sin(cameraRot.yaw) + z * Math.cos(cameraRot.yaw);
-      let y1 = y * Math.cos(cameraRot.pitch) - z1 * Math.sin(cameraRot.pitch);
-      let z2 = y * Math.sin(cameraRot.pitch) + z1 * Math.cos(cameraRot.pitch);
+    // 3D to 2D Projection with Relativistic Aberration
+    const project = (x: number, y: number, z: number, v_c: number) => {
+      const state = engineState.current;
       
-      const camZ = 400; // Camera distance
-      z2 += camZ;
-      if (z2 < 1) z2 = 1;
+      // Translate to ship-relative origin
+      let dx = x - state.ship.x;
+      let dy = y - state.ship.y;
+      let dz = z - state.ship.z;
+
+      // Rotate Camera Yaw & Pitch
+      let tx = dx * Math.cos(state.camera.yaw) - dz * Math.sin(state.camera.yaw);
+      let tz = dx * Math.sin(state.camera.yaw) + dz * Math.cos(state.camera.yaw);
+      let ty = dy * Math.cos(state.camera.pitch) - tz * Math.sin(state.camera.pitch);
+      let fz = dy * Math.sin(state.camera.pitch) + tz * Math.cos(state.camera.pitch);
+
+      if (fz < 0.0001) return null; // Behind camera plane
+
+      // Relativistic visual narrowing of Field of View as you approach c
+      const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
       
-      const scale = 500 / z2;
-      return { sx: width / 2 + x1 * scale, sy: height / 2 + y1 * scale, scale, z: z2 };
+      // Scale is exponentially driven by the mouse wheel
+      const scale = (width / 2) * (state.camera.zoomRaw / fz) * aberration;
+
+      return {
+        sx: width / 2 + tx * scale,
+        sy: height / 2 + ty * scale,
+        scale: scale,
+        dist: fz
+      };
     };
 
-    const animate = () => {
+    const animate = (now: number) => {
+      const state = engineState.current;
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
-      const state = viewRef.current;
-      const sys = activeSystemRef.current;
+      // --- 1. RELATIVISTIC KINEMATICS ---
+      const gamma = 1 / Math.sqrt(1 - Math.pow(velocityC, 2));
+      const deltaYears = dtBase * timeMultiplier;
+      
+      // Update Timelines (The weight of years)
+      state.clocks.universe += deltaYears;
+      state.clocks.ship += deltaYears / gamma;
 
-      // 1. GALAXY MAP VIEW
-      if (state === "MAP") {
-        // Draw Grid
-        ctx.strokeStyle = "rgba(255,255,255,0.05)";
-        ctx.beginPath();
-        for(let i = -500; i <= 500; i += 50) {
-          const p1 = project(i, 0, -500); const p2 = project(i, 0, 500);
-          ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy);
-          const p3 = project(-500, 0, i); const p4 = project(500, 0, i);
-          ctx.moveTo(p3.sx, p3.sy); ctx.lineTo(p4.sx, p4.sy);
+      // Autopilot Navigation
+      let distToTarget = 0;
+      if (velocityC > 0) {
+        const tx = targetStar.x - state.ship.x;
+        const ty = targetStar.y - state.ship.y;
+        const tz = targetStar.z - state.ship.z;
+        distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
+        
+        if (distToTarget > 0.001) { // If not arrived
+          // Move ship along vector in Light Years
+          const moveDist = velocityC * deltaYears; // c = 1 LY/year
+          state.ship.x += (tx / distToTarget) * moveDist;
+          state.ship.y += (ty / distToTarget) * moveDist;
+          state.ship.z += (tz / distToTarget) * moveDist;
         }
-        ctx.stroke();
+      } else {
+        const tx = targetStar.x - state.ship.x;
+        const ty = targetStar.y - state.ship.y;
+        const tz = targetStar.z - state.ship.z;
+        distToTarget = Math.sqrt(tx*tx + ty*ty + tz*tz);
+      }
 
-        // Draw Stars
-        STAR_SYSTEMS.forEach(star => {
-          const proj = project(star.x, star.y, star.z);
-          
-          // Selection Highlight
-          if (star.id === sys.id) {
-            ctx.beginPath();
-            ctx.arc(proj.sx, proj.sy, 15 * proj.scale, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(6, 182, 212, 0.5)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
+      // Sync telemetry to React UI every few frames to avoid lag
+      if (Math.random() < 0.1) {
+        setTelemetry({
+          universeYears: state.clocks.universe,
+          shipYears: state.clocks.ship,
+          gamma: gamma,
+          distance: distToTarget,
+          zoom: state.camera.zoomRaw
+        });
+      }
+
+      // --- 2. RENDER UNIVERSE (64-BIT PRECISION) ---
+      STAR_SYSTEMS.forEach(star => {
+        const starProj = project(star.x, star.y, star.z, velocityC);
+        
+        if (starProj) {
+          // Draw Star
+          const size = Math.max(1, 10 * starProj.scale);
+          const gradient = ctx.createRadialGradient(starProj.sx, starProj.sy, 0, starProj.sx, starProj.sy, size * 2);
+          gradient.addColorStop(0, star.color);
+          gradient.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = gradient;
+          ctx.beginPath(); ctx.arc(starProj.sx, starProj.sy, size * 2, 0, Math.PI * 2); ctx.fill();
+
+          // Draw Label if close enough or zoomed out
+          if (starProj.dist < 50 || state.camera.zoomRaw < 10) {
+            ctx.fillStyle = "rgba(255,255,255,0.7)";
+            ctx.font = "10px monospace";
+            ctx.fillText(star.name, starProj.sx + size + 5, starProj.sy);
+          }
+        }
+
+        // --- 3. KEPLERIAN ORBITAL MECHANICS (Micro Scale) ---
+        // Only calculate and render planets if we are close to the star or heavily zoomed in
+        const distToCamera = Math.sqrt(Math.pow(star.x - state.ship.x, 2) + Math.pow(star.y - state.ship.y, 2) + Math.pow(star.z - state.ship.z, 2));
+        
+        if (distToCamera < 0.5 || state.camera.zoomRaw > 1000) {
+          star.planets.forEach(p => {
+            const planetId = `${star.id}-${p.name}`;
+            if (!state.planetAngles.has(planetId)) state.planetAngles.set(planetId, Math.random() * Math.PI * 2);
             
-            // Draw connection to origin plane
-            const dropProj = project(star.x, 0, star.z);
-            ctx.beginPath(); ctx.moveTo(proj.sx, proj.sy); ctx.lineTo(dropProj.sx, dropProj.sy);
-            ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]);
-          }
-
-          // Star Body
-          ctx.beginPath();
-          ctx.arc(proj.sx, proj.sy, 5 * proj.scale, 0, Math.PI * 2);
-          ctx.fillStyle = star.color;
-          ctx.shadowBlur = 15;
-          ctx.shadowColor = star.color;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-
-          // Label
-          ctx.fillStyle = "white";
-          ctx.font = "10px monospace";
-          ctx.fillText(star.name, proj.sx + 10, proj.sy - 10);
-        });
-      }
-
-      // 2. RELATIVISTIC WARP VIEW (Lorentz Contraction Visual)
-      else if (state === "WARP") {
-        const speed = warpProgress < 0.5 ? warpProgress * 2 : (1 - warpProgress) * 2; // Ease in/out
-        const stretch = 1 + speed * 100;
-
-        ctx.fillStyle = `rgba(2, 2, 2, ${0.1 + (1 - speed) * 0.9})`; // Motion blur trail
-        ctx.fillRect(0, 0, width, height);
-
-        staticStars.forEach(star => {
-          star.z -= speed * 150; // Fly forward
-          if (star.z < -200) star.z = 1000; // Loop stars
-
-          const proj1 = project(star.x, star.y, star.z);
-          const proj2 = project(star.x, star.y, star.z + stretch); // Stretched tail
-
-          if (proj1.z > 0 && proj2.z > 0) {
-            ctx.beginPath();
-            ctx.moveTo(proj1.sx, proj1.sy);
-            ctx.lineTo(proj2.sx, proj2.sy);
+            // Kepler's Third Law: T = sqrt(a^3 / M)
+            // T is period in Earth Years.
+            const periodYears = Math.sqrt(Math.pow(p.d, 3) / star.mass);
             
-            // Doppler Shift: Blueshift approaching, redshift peripheral
-            const isCenter = Math.abs(star.x) < 100 && Math.abs(star.y) < 100;
-            ctx.strokeStyle = isCenter ? `rgba(165, 243, 252, ${speed})` : `rgba(239, 68, 68, ${speed * 0.5})`;
-            ctx.lineWidth = proj1.scale * star.size;
-            ctx.stroke();
-          }
-        });
-      }
+            // Update angle based on accurate UNIVERSE TIME elapsed
+            let currentAngle = state.planetAngles.get(planetId)!;
+            currentAngle += (deltaYears / periodYears) * Math.PI * 2;
+            state.planetAngles.set(planetId, currentAngle);
 
-      // 3. LOCAL SYSTEM PHYSICS VIEW
-      else if (state === "SYSTEM") {
-        // Central Star
-        const sunProj = project(0, 0, 0);
-        const gradient = ctx.createRadialGradient(sunProj.sx, sunProj.sy, 0, sunProj.sx, sunProj.sy, 40 * sunProj.scale);
-        gradient.addColorStop(0, sys.color);
-        gradient.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = gradient;
-        ctx.beginPath(); ctx.arc(sunProj.sx, sunProj.sy, 40 * sunProj.scale, 0, Math.PI * 2); ctx.fill();
+            // Convert AU distance to Light Years for the master 3D grid
+            const radiusInLY = p.d / LY_TO_AU;
+            const px = star.x + radiusInLY * Math.cos(currentAngle);
+            const pz = star.z + radiusInLY * Math.sin(currentAngle);
+            const py = star.y;
 
-        // Orbiting Planets
-        const rendered: any[] = [];
-        sys.planets.forEach((p, i) => {
-          planetAngles[i] += p.speed;
-          const x = Math.cos(planetAngles[i]) * p.d;
-          const z = Math.sin(planetAngles[i]) * p.d;
-          
-          // Draw Orbit Ring
-          ctx.beginPath();
-          for (let a = 0; a < Math.PI * 2; a += 0.1) {
-            const ox = Math.cos(a) * p.d;
-            const oz = Math.sin(a) * p.d;
-            const ringProj = project(ox, 0, oz);
-            if (a === 0) ctx.moveTo(ringProj.sx, ringProj.sy); else ctx.lineTo(ringProj.sx, ringProj.sy);
-          }
-          ctx.closePath();
-          ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.stroke();
+            const pProj = project(px, py, pz, velocityC);
+            if (pProj) {
+              // Draw Planet
+              const pSize = Math.max(0.5, p.r * pProj.scale * 0.0001); // Scale radius visually
+              ctx.fillStyle = p.color;
+              ctx.beginPath(); ctx.arc(pProj.sx, pProj.sy, pSize, 0, Math.PI * 2); ctx.fill();
+              
+              // Draw Orbit Ring (Optional, fades in when zoomed)
+              if (state.camera.zoomRaw > 5000) {
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2; a += 0.1) {
+                  const ringX = star.x + radiusInLY * Math.cos(a);
+                  const ringZ = star.z + radiusInLY * Math.sin(a);
+                  const ringProj = project(ringX, py, ringZ, velocityC);
+                  if (ringProj) {
+                    if (a === 0) ctx.moveTo(ringProj.sx, ringProj.sy);
+                    else ctx.lineTo(ringProj.sx, ringProj.sy);
+                  }
+                }
+                ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.stroke();
+                
+                // Planet Label
+                ctx.fillStyle = "rgba(255,255,255,0.4)";
+                ctx.font = "8px monospace";
+                ctx.fillText(p.name, pProj.sx + pSize + 2, pProj.sy + 2);
+              }
+            }
+          });
+        }
+      });
 
-          const proj = project(x, 0, z);
-          rendered.push({ ...proj, ...p });
-        });
-
-        // Depth sort and draw
-        rendered.sort((a, b) => b.z - a.z).forEach(p => {
-          ctx.beginPath(); ctx.arc(p.sx, p.sy, p.r * p.scale, 0, Math.PI * 2);
-          ctx.fillStyle = p.color; ctx.fill();
-          
-          // Tag
-          ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "9px monospace";
-          ctx.fillText(p.name, p.sx + p.r + 4, p.sy + 3);
-        });
-      }
-
-      frameRef.current = requestAnimationFrame(animate);
+      reqId = requestAnimationFrame(animate);
     };
 
-    animate();
+    reqId = requestAnimationFrame(performance.now);
 
     const handleResize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
     window.addEventListener("resize", handleResize);
-    return () => { cancelAnimationFrame(frameRef.current); window.removeEventListener("resize", handleResize); };
-  }, [cameraRot]);
+    return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", handleResize); };
+  }, [velocityC, timeMultiplier, targetStar]);
 
   return (
     <main 
-      className="relative w-screen h-screen bg-[#020202] text-neutral-300 font-mono overflow-hidden cursor-crosshair selection:bg-cyan-900"
+      className="relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden cursor-crosshair selection:bg-cyan-900"
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onMouseMove={handleMouseMove}
+      onWheel={handleWheel}
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
-      {/* TOP NAVIGATION HUD */}
-      <header className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none z-10">
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-cyan-500 mb-1 animate-pulse">Relativistic Flight Terminal</p>
-          <h1 className="text-2xl font-bold text-white tracking-tight">STELLAR CARTOGRAPHY</h1>
+      {/* TARGETING HUD - LEFT */}
+      <aside className="absolute top-6 left-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-lg pointer-events-auto">
+        <p className="text-[10px] uppercase tracking-widest text-cyan-400 mb-4 animate-pulse">Nav-Computer Online</p>
+        <h2 className="text-xl font-bold mb-4 border-b border-white/10 pb-4">Select Coordinates</h2>
+        
+        <div className="space-y-2 mb-6">
+          {STAR_SYSTEMS.map(sys => (
+            <button 
+              key={sys.id}
+              onClick={() => setTargetStar(sys)}
+              className={`w-full text-left p-3 text-sm rounded border transition-colors ${targetStar.id === sys.id ? "bg-cyan-950/50 border-cyan-500" : "bg-black/40 border-white/10 hover:border-white/30"}`}
+            >
+              {sys.name}
+            </button>
+          ))}
         </div>
-        <div className="text-right">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Active Mode</p>
-          <p className="text-sm font-bold text-white uppercase">{viewState === "MAP" ? "Sector Scan" : viewState === "WARP" ? "Transit" : "Local Physics"}</p>
+
+        <div className="bg-white/5 p-4 rounded border border-white/5">
+          <p className="text-[10px] uppercase text-neutral-500 mb-1">Target Distance</p>
+          <p className="text-lg font-bold text-white">{telemetry.distance.toFixed(4)} LY</p>
+          <p className="text-[10px] text-neutral-500 mt-2">({(telemetry.distance * LY_TO_AU).toLocaleString(undefined, {maximumFractionDigits:0})} AU)</p>
         </div>
-      </header>
-
-      {/* LEFT PANEL: SYSTEM SELECTOR (Only in MAP mode) */}
-      <aside className={`absolute top-24 left-6 w-80 flex flex-col gap-3 transition-all duration-500 ${viewState === "MAP" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none translate-x-[-20px]"}`}>
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 border-b border-white/10 pb-2">Select Target Coordinates</p>
-        {STAR_SYSTEMS.map(sys => (
-          <button 
-            key={sys.id}
-            onClick={() => setActiveSystem(sys)}
-            className={`text-left p-4 rounded-md border transition-all ${activeSystem.id === sys.id ? "bg-cyan-950/40 border-cyan-500/50" : "bg-black/40 border-white/10 hover:border-white/30 backdrop-blur-md"}`}
-          >
-            <h3 className="text-white font-bold text-sm">{sys.name}</h3>
-            <div className="flex justify-between text-[10px] text-neutral-400 mt-2">
-              <span>{sys.distance}</span>
-              <span>{sys.type}</span>
-            </div>
-          </button>
-        ))}
-
-        <button 
-          onClick={() => initiateJump(activeSystem)}
-          className="mt-4 w-full bg-white text-black font-bold py-3 uppercase tracking-widest text-xs hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] transition-all"
-        >
-          Initiate Relativistic Jump
-        </button>
       </aside>
 
-      {/* RIGHT PANEL: LOCAL DATA (Only in SYSTEM mode) */}
-      <aside className={`absolute top-24 right-6 w-80 flex flex-col gap-4 transition-all duration-500 ${viewState === "SYSTEM" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none translate-x-[20px]"}`}>
-        <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-6 rounded-md">
-          <p className="text-[10px] uppercase tracking-widest text-green-400 mb-1">Arrival Confirmed</p>
-          <h2 className="text-2xl font-bold text-white mb-4 border-b border-white/10 pb-4">{activeSystem.name}</h2>
+      {/* RELATIVISTIC PHYSICS CONTROLS - BOTTOM */}
+      <footer className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-3xl bg-black/80 backdrop-blur-3xl border border-white/10 p-8 rounded-2xl pointer-events-auto shadow-2xl">
+        <div className="grid grid-cols-2 gap-12">
           
-          <div className="space-y-2 mb-6">
-            <div className="flex justify-between text-xs text-neutral-400"><span className="uppercase text-[10px]">Stellar Class</span><span className="text-white">{activeSystem.type}</span></div>
-            <div className="flex justify-between text-xs text-neutral-400"><span className="uppercase text-[10px]">Solar Mass</span><span className="text-white">{activeSystem.mass} M☉</span></div>
+          {/* THROTTLE (c) */}
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Sub-light Throttle</span>
+              <span className="text-xs font-bold text-cyan-400">{velocityC.toFixed(4)}c</span>
+            </div>
+            <input 
+              type="range" min="0" max="0.9999" step="0.0001" 
+              value={velocityC} 
+              onChange={(e) => setVelocityC(parseFloat(e.target.value))}
+              className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-cyan-400"
+            />
+            <p className="text-[9px] text-neutral-500 leading-tight mt-1">
+              Accelerating alters Lorentz factor ($\gamma$). Visually contracts FOV due to relativistic aberration.
+            </p>
           </div>
 
-          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-3">Orbital Bodies Detected [{activeSystem.planets.length}]</p>
-          <div className="space-y-3">
-            {activeSystem.planets.map((p, i) => (
-              <div key={i} className="flex items-center justify-between border-l-2 pl-3" style={{ borderColor: p.color }}>
-                <span className="text-xs text-white">{p.name}</span>
-                <span className="text-[10px] text-neutral-500">Orbit: {p.d} AU</span>
-              </div>
-            ))}
+          {/* TIME MULTIPLIER */}
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">Universe Time Multiplier</span>
+              <span className="text-xs font-bold text-purple-400">{timeMultiplier.toFixed(0)}x</span>
+            </div>
+            <input 
+              type="range" min="1" max="50000" step="10" 
+              value={timeMultiplier} 
+              onChange={(e) => setTimeMultiplier(parseFloat(e.target.value))}
+              className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-purple-400"
+            />
+            <p className="text-[9px] text-neutral-500 leading-tight mt-1">
+              Fast-forwards universal simulation. Watch Keplerian orbits accelerate.
+            </p>
+          </div>
+
+        </div>
+
+        {/* RELATIVISTIC CHRONOMETER (The Weight of Years) */}
+        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">Lorentz Factor (γ)</p>
+            <p className="text-xl font-bold text-white">{telemetry.gamma.toFixed(3)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">Ship Time Elapsed</p>
+            <p className="text-xl font-bold text-cyan-400">{telemetry.shipYears.toFixed(2)} YRS</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">Universe Time Elapsed</p>
+            <p className="text-xl font-bold text-purple-400">{telemetry.universeYears.toFixed(2)} YRS</p>
           </div>
         </div>
+      </footer>
 
-        <button 
-          onClick={() => setViewState("MAP")}
-          className="w-full border border-white/20 text-white font-bold py-3 uppercase tracking-widest text-[10px] hover:bg-white/10 backdrop-blur-md transition-colors"
-        >
-          Return to Sector Map
-        </button>
-      </aside>
-
-      {/* WARP HUD (Only visible during jump) */}
-      <div className={`absolute inset-0 pointer-events-none flex flex-col items-center justify-center transition-opacity duration-300 ${viewState === "WARP" ? "opacity-100" : "opacity-0"}`}>
-        <h2 className="text-6xl font-black text-white tracking-tighter mb-4 italic mix-blend-difference">VELOCITY: {(warpProgress * 0.999).toFixed(3)}c</h2>
-        <div className="w-96 h-1 bg-white/20 rounded-full overflow-hidden">
-          <div className="h-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]" style={{ width: `${warpProgress * 100}%` }}></div>
-        </div>
-        <div className="w-96 flex justify-between text-[10px] text-cyan-400 uppercase tracking-widest mt-2 mix-blend-difference">
-          <span>Lorentz Factor: {(1 / Math.sqrt(1 - Math.pow(warpProgress * 0.999, 2))).toFixed(2)}γ</span>
-          <span>Doppler Shift Active</span>
-        </div>
+      {/* CAMERA INFO - TOP RIGHT */}
+      <div className="absolute top-6 right-6 text-right pointer-events-none">
+        <p className="text-[10px] uppercase tracking-widest text-neutral-500">Camera Mag-Level</p>
+        <p className="text-lg font-bold text-white">{telemetry.zoom.toLocaleString(undefined, {maximumFractionDigits:0})}x</p>
+        <p className="text-[10px] text-neutral-500 mt-1">Scroll wheel to zoom across 64-bit scale</p>
       </div>
 
     </main>
