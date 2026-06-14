@@ -8,7 +8,7 @@ interface Task {
 }
 
 export default function TodoList() {
-  const [tasks, setTasks] = useState<Task[]>([
+  const [tasks] = useState<Task[]>([
     { id: 1, title: "Set up antiX Linux" },
     { id: 2, title: "Install Next.js" },
   ]);
