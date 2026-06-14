@@ -36,7 +36,7 @@ export default function NBodySimulator() {
   const [metrics, setMetrics] = useState({ kinetic: 0, potential: 0, total: 0 });
   
   const bodiesRef = useRef<Body[]>(JSON.parse(JSON.stringify(INITIAL_BODIES)));
-  const reqRef = useRef<number>();
+  const reqRef = useRef<number>(0);
 
   // --- THE VELOCITY VERLET INTEGRATOR ---
   const calculateAccelerations = (currentBodies: Body[]) => {
