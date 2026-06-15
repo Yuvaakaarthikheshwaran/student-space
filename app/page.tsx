@@ -5,71 +5,239 @@ type StarData = { id: string; name: string; x: number; y: number; z: number; col
 
 const CORE_STARS: StarData[] = [
   { id: "SOL", name: "Sun (Sol)", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1, distanceLY: 0 },
-  { id: "CEN", name: "Alpha Centauri", x: 4.37, y: 0.0, z: 0.0, color: "#fde047", radius: 1.1, distanceLY: 4.37 },
+  { id: "CEN", name: "Alpha Centauri", x: 4.37, y: 0, z: 0, color: "#fde047", radius: 1.1, distanceLY: 4.37 },
   { id: "SIR", name: "Sirius A", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.7, distanceLY: 8.6 }
 ];
 
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  const [velocityC, setVelocityC] = useState(0); 
-  const [timeMultiplier, setTimeMultiplier] = useState(1); 
+  const [velocityC, setVelocityC] = useState(0); const [timeMultiplier, setTimeMultiplier] = useState(1);
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: 0 });
   const [knownStars, setKnownStars] = useState<StarData[]>(CORE_STARS);
-  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]); 
+  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]);
   const [isNavLocked, setIsNavLocked] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
 
-  const velRef = useRef(velocityC);
-  const timeRef = useRef(timeMultiplier);
-  const navLockRef = useRef(isNavLocked);
-  const targetStarRef = useRef(targetStar);
-  const knownStarsRef = useRef(knownStars);
-  
-  useEffect(() => { velRef.current = velocityC; }, [velocityC]);
-  useEffect(() => { timeRef.current = timeMultiplier; }, [timeMultiplier]);
-  useEffect(() => { navLockRef.current = isNavLocked; }, [isNavLocked]);
-  useEffect(() => { targetStarRef.current = targetStar; }, [targetStar]);
-  useEffect(() => { knownStarsRef.current = knownStars; }, [knownStars]);
+  const stateRefs = useRef({ vel: 0, time: 1, lock: false, tgt: CORE_STARS[1], stars: CORE_STARS });
+  useEffect(() => {
+    stateRefs.current = { vel: velocityC, time: timeMultiplier, lock: isNavLocked, tgt: targetStar, stars: knownStars };
+  }, [velocityC, timeMultiplier, isNavLocked, targetStar, knownStars]);
 
   const engineState = useRef({
-    ship: { x: 0, y: 0.001, z: -1.0 }, 
-    camera: { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 },
-    mouse: { isDown: false, lastX: 0, lastY: 0 },
-    clocks: { universe: 0, ship: 0 }
+    ship: { x: 0, y: 0.001, z: -1.0 }, camera: { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 },
+    mouse: { isDown: false, lastX: 0, lastY: 0 }, clocks: { universe: 0, ship: 0 }
   });
 
   const bgDust = useRef(Array.from({ length: 2500 }, () => ({
-    x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 100, z: (Math.random() - 0.5) * 100,
-    baseAlpha: Math.random() * 0.8 + 0.2
+    x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 100, z: (Math.random() - 0.5) * 100, alpha: Math.random() * 0.8 + 0.2
   })));
 
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
-    setIsSearching(true);
-    setSearchError("");
-
+    setIsSearching(true); setSearchError("");
     try {
-      const safeQuery = searchQuery.trim().replace(/'/g, "''");
-      const adql = `SELECT TOP 1 basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM basic JOIN parallaxes ON basic.oid = parallaxes.oidref JOIN ident ON basic.oid = ident.oidref WHERE LOWER(ident.id) LIKE LOWER('%${safeQuery}%') AND parallaxes.plx > 0`;
-      const url = `https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=${encodeURIComponent(adql)}`;
+      const sq = searchQuery.trim().replace(/'/g, "''");
+      const adql = `SELECT TOP 1 basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM basic JOIN parallaxes ON basic.oid = parallaxes.oidref JOIN ident ON basic.oid = ident.oidref WHERE LOWER(ident.id) LIKE LOWER('%${sq}%') AND parallaxes.plx > 0`;
+      const res = await fetch(`https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=${encodeURIComponent(adql)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error || !data.data || !data.data.length) throw new Error("Star not found.");
+
+      const d = data.data[0];
+      const name = String(d[0]).replace(/b'|'/g, '').trim();
+      const distLY = (1000 / parseFloat(d[3])) * 3.26156;
+      const raRad = parseFloat(d[1]) * (Math.PI / 180), decRad = parseFloat(d[2]) * (Math.PI / 180);
+      const newStar: StarData = {
+        id: `API-${Date.now()}`, name, color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
+      };
+      setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setIsNavLocked(true); setSearchQuery("");
+    } catch (err: any) { setSearchError(err.message || "Uplink failed."); } finally { setIsSearching(false); }
+  };
+
+  const handleMouse = {
+    down: (e: React.MouseEvent) => { engineState.current.mouse = { isDown: true, lastX: e.clientX, lastY: e.clientY }; },
+    up: () => { engineState.current.mouse.isDown = false; },
+    move: (e: React.MouseEvent) => {
+      const m = engineState.current.mouse;
+      if (!m.isDown || isNavLocked) return;
+      engineState.current.camera.targetYaw += (e.clientX - m.lastX) * 0.003;
+      engineState.current.camera.targetPitch = Math.max(-1.57, Math.min(1.57, engineState.current.camera.targetPitch - (e.clientY - m.lastY) * 0.003));
+      m.lastX = e.clientX; m.lastY = e.clientY;
+    }
+  };
+
+  const resetEngine = () => {
+    engineState.current.ship = { x: 0, y: 0.001, z: -1.0 };
+    engineState.current.camera = { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 };
+    engineState.current.clocks = { universe: 0, ship: 0 };
+    setVelocityC(0); setTimeMultiplier(1); setIsNavLocked(false); setTargetStar(CORE_STARS[1]);
+  };
+
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx || !canvasRef.current) return;
+    let w = canvasRef.current.width = window.innerWidth, h = canvasRef.current.height = window.innerHeight, reqId: number;
+
+    const project = (x: number, y: number, z: number, v_c: number) => {
+      const st = engineState.current;
+      let dx = x - st.ship.x, dy = y - st.ship.y, dz = z - st.ship.z;
+      let tx = dx * Math.cos(st.camera.yaw) - dz * Math.sin(st.camera.yaw);
+      let tz = dx * Math.sin(st.camera.yaw) + dz * Math.cos(st.camera.yaw);
+      let ty = dy * Math.cos(st.camera.pitch) - tz * Math.sin(st.camera.pitch);
+      let fz = dy * Math.sin(st.camera.pitch) + tz * Math.cos(st.camera.pitch);
+      if (fz < 0.000001) return null;
+      return { sx: w/2 + tx * ((w/2) / fz * (1 - v_c * 0.2)), sy: h/2 + ty * ((w/2) / fz * (1 - v_c * 0.2)), scale: (w/2) / fz * (1 - v_c * 0.2), dist: fz };
+    };
+
+    const animate = () => {
+      const st = engineState.current, refs = stateRefs.current;
+      if (refs.lock) {
+        let dx = refs.tgt.x - st.ship.x, dy = refs.tgt.y - st.ship.y, dz = refs.tgt.z - st.ship.z;
+        st.camera.targetYaw = Math.atan2(dx, dz); st.camera.targetPitch = Math.atan2(dy, Math.hypot(dx, dz));
+      }
+      st.camera.yaw += (st.camera.targetYaw - st.camera.yaw) * 0.1;
+      st.camera.pitch += (st.camera.targetPitch - st.camera.pitch) * 0.1;
+      ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, w, h);
+
+      const gamma = 1 / Math.sqrt(1 - Math.pow(refs.vel, 2)), dYrs = 0.001 * refs.time;
+      st.clocks.universe += dYrs; st.clocks.ship += dYrs / gamma;
       
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (data.error || !data.data || data.data.length === 0) {
-        setSearchError("Star not found in database.");
-        return setIsSearching(false);
+      let v = refs.vel, distToTgt = Math.hypot(refs.tgt.x - st.ship.x, refs.tgt.y - st.ship.y, refs.tgt.z - st.ship.z);
+      if (refs.lock && v > 0 && v * dYrs > distToTgt - 0.05) { v = 0; setVelocityC(0); setTimeMultiplier(1); }
+      
+      if (v > 0) {
+        st.ship.x += Math.sin(st.camera.yaw) * Math.cos(st.camera.pitch) * (v * dYrs);
+        st.ship.y += Math.sin(st.camera.pitch) * (v * dYrs);
+        st.ship.z += Math.cos(st.camera.yaw) * Math.cos(st.camera.pitch) * (v * dYrs);
       }
 
-      const starData = data.data[0];
-      const name = String(starData[0]).replace(/b'/g, '').replace(/'/g, '').trim();
-      const plx = parseFloat(starData[3]);
-      const distLY = (1000 / plx) * 3.26156;
-      const raRad = parseFloat(starData[1]) * (Math.PI / 180);
-      const decRad = parseFloat(starData[2]) * (Math.PI / 180);
+      if (Math.random() < 0.1) setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma });
 
-      const x = distLY * Math
+      bgDust.current.forEach(d => {
+        let dx = d.x - st.ship.x, dy = d.y - st.ship.y, dz = d.z - st.ship.z;
+        if (dx > 50) d.x -= 100; if (dx < -50) d.x += 100;
+        if (dy > 50) d.y -= 100; if (dy < -50) d.y += 100;
+        if (dz > 50) d.z -= 100; if (dz < -50) d.z += 100;
+        const p1 = project(d.x, d.y, d.z, v), p2 = project(d.x + Math.sin(st.camera.yaw)*Math.cos(st.camera.pitch)*v*2, d.y + Math.sin(st.camera.pitch)*v*2, d.z + Math.cos(st.camera.yaw)*Math.cos(st.camera.pitch)*v*2, v);
+        if (p1 && p2) {
+          const fade = Math.max(0, 1 - (Math.hypot(dx, dy, dz) / 50)), shift = Math.min(1, Math.hypot(p1.sx - w/2, p1.sy - h/2) / (w/2));
+          let r = 255, g = 255, b = 255;
+          if (v > 0.1) { r = Math.floor(255*shift); b = Math.floor(255*(1-shift)); g = Math.floor(255*(1-shift*0.5)); }
+          ctx.strokeStyle = `rgba(${r},${g},${b},${d.alpha * fade})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+        }
+      });
+
+      let onScreen = false;
+      refs.stars.forEach(s => {
+        const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
+        if (p) {
+          if (isTgt && p.sx > 0 && p.sx < w && p.sy > 0 && p.sy < h) onScreen = true;
+          const cr = Math.max(1, Math.min(w * 0.4, (s.radius * 0.0005) * p.scale)), gr = Math.max(2, cr * 3);
+          if (p.dist > 0.0001) {
+             const g = ctx.createRadialGradient(p.sx, p.sy, cr, p.sx, p.sy, gr);
+             g.addColorStop(0, `${s.color}90`); g.addColorStop(1, "rgba(0,0,0,0)");
+             ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.sx, p.sy, gr, 0, 6.28); ctx.fill();
+             ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(p.sx, p.sy, cr, 0, 6.28); ctx.fill();
+          }
+          if ((p.dist < 100 && p.dist > 0.1) || isTgt) {
+            ctx.fillStyle = isTgt ? "#22d3ee" : "rgba(255,255,255,0.5)"; ctx.font = isTgt ? "bold 12px monospace" : "10px monospace";
+            ctx.fillText(s.name, p.sx + gr + 5, p.sy + 3);
+          }
+          if (isTgt && refs.lock) {
+            ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(p.sx, p.sy, gr + 15, 0, 6.28); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(p.sx, p.sy - gr - 20); ctx.lineTo(p.sx, p.sy - gr - 10); ctx.moveTo(p.sx, p.sy + gr + 20); ctx.lineTo(p.sx, p.sy + gr + 10);
+            ctx.moveTo(p.sx - gr - 20, p.sy); ctx.lineTo(p.sx - gr - 10, p.sy); ctx.moveTo(p.sx + gr + 20, p.sy); ctx.lineTo(p.sx + gr + 10, p.sy); ctx.stroke();
+          }
+        }
+      });
+
+      if (!onScreen) {
+        let dx = refs.tgt.x - st.ship.x, dy = refs.tgt.y - st.ship.y, dz = refs.tgt.z - st.ship.z;
+        let tx = dx * Math.cos(st.camera.yaw) - dz * Math.sin(st.camera.yaw);
+        let ty = dy * Math.cos(st.camera.pitch) - (dx * Math.sin(st.camera.yaw) + dz * Math.cos(st.camera.yaw)) * Math.sin(st.camera.pitch);
+        const ang = Math.atan2(ty, tx), ax = w/2 + Math.cos(ang) * (Math.min(w/2, h/2) - 50), ay = h/2 + Math.sin(ang) * (Math.min(w/2, h/2) - 50);
+        ctx.fillStyle = "#22d3ee"; ctx.beginPath(); ctx.arc(ax, ay, 5, 0, 6.28); ctx.fill();
+        ctx.font = "10px monospace"; ctx.fillText("TARGET", ax + 10, ay + 4);
+      }
+      reqId = requestAnimationFrame(animate);
+    };
+
+    reqId = requestAnimationFrame(animate);
+    const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
+    window.addEventListener("resize", rs); return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
+  }, []);
+
+  return (
+    <main className={`relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden ${isNavLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`} onMouseDown={handleMouse.down} onMouseUp={handleMouse.up} onMouseLeave={handleMouse.up} onMouseMove={handleMouse.move}>
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
+      <div className="absolute inset-0 pointer-events-none z-0 opacity-[0.03] mix-blend-overlay" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 4px)" }}></div>
+
+      <header className="absolute top-6 left-6 z-10">
+         <button onClick={resetEngine} className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all">Reset Origin</button>
+      </header>
+
+      {!isNavLocked && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-30">
+          <div className="w-8 h-px bg-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+          <div className="w-px h-8 bg-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+        </div>
+      )}
+
+      <aside className="absolute top-6 right-6 w-80 bg-black/60 backdrop-blur-xl border border-indigo-500/20 p-4 rounded-lg pointer-events-auto shadow-[0_0_30px_rgba(99,102,241,0.05)] max-h-[85vh] flex flex-col z-10">
+        <div className="mb-4">
+          <p className="text-[10px] text-indigo-400 uppercase tracking-widest mb-2 font-bold flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span> SIMBAD Uplink</p>
+          <form onSubmit={searchSimbadAPI} className="flex gap-2">
+            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Query star (e.g., Vega)" className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs focus:border-indigo-500 outline-none" />
+            <button type="submit" disabled={isSearching} className="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded text-xs font-bold disabled:opacity-50">{isSearching ? "..." : "SCAN"}</button>
+          </form>
+          {searchError && <p className="text-[9px] text-red-400 mt-1 uppercase tracking-widest">{searchError}</p>}
+        </div>
+
+        <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
+          <h2 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Waypoints</h2>
+          <button onClick={() => setIsNavLocked(false)} className={`text-[9px] px-2 py-1 rounded uppercase ${isNavLocked ? "bg-red-500/20 text-red-400 border border-red-500/50" : "bg-neutral-800 text-neutral-500 border border-neutral-700"}`}>{isNavLocked ? "Unlock Camera" : "Manual Flight"}</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
+          {knownStars.map(star => {
+            const isTgt = targetStar.id === star.id && isNavLocked;
+            return (
+              <div key={star.id} className={`p-2 rounded flex flex-col border ${isTgt ? "bg-cyan-950/40 border-cyan-500" : "bg-white/5 border-white/5"}`}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold flex items-center gap-2">{star.name} {star.isCustom && <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1 rounded uppercase border border-indigo-500/30">API</span>}</span>
+                  <button onClick={() => { setTargetStar(star); setIsNavLocked(true); }} className={`text-[9px] px-2 py-0.5 rounded uppercase ${isTgt ? "bg-cyan-500 text-black font-bold" : "bg-cyan-900/50 text-cyan-300"}`}>{isTgt ? "Tracking" : "Lock On"}</button>
+                </div>
+                <div className="flex justify-between text-[10px] text-neutral-400"><span>Target Dist:</span><span className="text-white font-bold">{Math.hypot(star.x - engineState.current.ship.x, star.y - engineState.current.ship.y, star.z - engineState.current.ship.z).toFixed(4)} LY</span></div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      <footer className="absolute bottom-6 left-6 w-[550px] bg-black/80 backdrop-blur-3xl border border-white/10 p-6 rounded-xl pointer-events-auto shadow-2xl z-10">
+        {isNavLocked && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-500 text-black text-[9px] font-bold px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">Autopilot Engaged</div>}
+        <div className="grid grid-cols-2 gap-8 mb-6">
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between"><span className="text-[10px] uppercase tracking-widest text-neutral-500">Throttle (v)</span><span className="text-xs font-bold text-cyan-400">{velocityC.toFixed(4)}c</span></div>
+            <input type="range" min="0" max="0.9999" step="0.0001" value={velocityC} onChange={(e) => setVelocityC(parseFloat(e.target.value))} className="w-full h-2 bg-white/10 rounded-full appearance-none accent-cyan-400 cursor-pointer" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between"><span className="text-[10px] uppercase tracking-widest text-neutral-500">Time Warp</span><span className="text-xs font-bold text-purple-400">{timeMultiplier.toFixed(0)}x</span></div>
+            <input type="range" min="1" max="50000" step="10" value={timeMultiplier} onChange={(e) => setTimeMultiplier(parseFloat(e.target.value))} className="w-full h-2 bg-white/10 rounded-full appearance-none accent-purple-400 cursor-pointer" />
+          </div>
+        </div>
+        <div className="border-t border-white/10 pt-4 grid grid-cols-4 gap-2 text-center">
+          <div><p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Lorentz (γ)</p><p className="text-sm font-bold">{telemetry.gamma.toFixed(2)}</p></div>
+          <div><p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Contracted Dist</p><p className="text-sm font-bold text-emerald-400">{telemetry.contractedDist.toFixed(3)} LY</p></div>
+          <div><p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Ship Time</p><p className="text-sm font-bold text-cyan-400">{telemetry.shipYears.toFixed(1)} YR</p></div>
+          <div><p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Universe Time</p><p className="text-sm font-bold text-purple-400">{telemetry.universeYears.toFixed(1)} YR</p></div>
+        </div>
+      </footer>
+    </main>
+  );
+}
