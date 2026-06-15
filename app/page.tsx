@@ -35,15 +35,24 @@ export default function DeepSpaceEngine() {
     x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 100, z: (Math.random() - 0.5) * 100, alpha: Math.random() * 0.8 + 0.2
   })));
 
+  // --- FIXED TAP/ADQL SIMBAD UPLINK ---
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearching(true); setSearchError("");
     try {
-      const sq = searchQuery.trim().replace(/'/g, "''");
-      const adql = `SELECT TOP 1 basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM basic JOIN parallaxes ON basic.oid = parallaxes.oidref JOIN ident ON basic.oid = ident.oidref WHERE LOWER(ident.id) LIKE LOWER('%${sq}%') AND parallaxes.plx > 0`;
-      const res = await fetch(`https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=${encodeURIComponent(adql)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Clean input and strictly lowercase it for the ADQL LOWER() function
+      const sq = searchQuery.trim().toLowerCase().replace(/'/g, "''");
+      
+      // Removed TOP 1, using strict ADQL 2.0 syntax
+      const adql = `SELECT basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM basic JOIN parallaxes ON basic.oid = parallaxes.oidref JOIN ident ON basic.oid = ident.oidref WHERE LOWER(ident.id) LIKE '%${sq}%' AND parallaxes.plx > 0`;
+      
+      // Added &maxrec=1 to the HTTP URL parameter to satisfy TAP protocol limits
+      const url = `https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&maxrec=1&query=${encodeURIComponent(adql)}`;
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} (Syntax/Server Error)`);
+      
       const data = await res.json();
       if (data.error || !data.data || !data.data.length) throw new Error("Star not found.");
 
@@ -51,12 +60,18 @@ export default function DeepSpaceEngine() {
       const name = String(d[0]).replace(/b'|'/g, '').trim();
       const distLY = (1000 / parseFloat(d[3])) * 3.26156;
       const raRad = parseFloat(d[1]) * (Math.PI / 180), decRad = parseFloat(d[2]) * (Math.PI / 180);
+      
       const newStar: StarData = {
         id: `API-${Date.now()}`, name, color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
+      
       setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setIsNavLocked(true); setSearchQuery("");
-    } catch (err: any) { setSearchError(err.message || "Uplink failed."); } finally { setIsSearching(false); }
+    } catch (err: any) { 
+      setSearchError(err.message || "Uplink failed."); 
+    } finally { 
+      setIsSearching(false); 
+    }
   };
 
   const handleMouse = {
