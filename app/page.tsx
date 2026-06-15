@@ -162,7 +162,11 @@ export default function DeepSpaceEngine() {
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          const cr = Math.max(1.5, Math.min(w * 0.4, (s.radius * 0.015) * p.scale)), gr = Math.max(2, cr * 3);
+          // FIX: Inverse-Square Distance Clamp. Stars are 1.2px dots until < 0.5 LY away.
+          const bloom = p.dist < 0.5 ? Math.pow(0.5 / Math.max(0.0001, p.dist), 2) : 0;
+          const cr = Math.max(1.2, Math.min(w * 0.4, s.radius * bloom));
+          const gr = p.dist < 0.5 ? cr * 3 : 2; 
+
           if (p.dist > 0.0001) {
              const g = ctx.createRadialGradient(p.sx, p.sy, cr, p.sx, p.sy, gr);
              g.addColorStop(0, `${s.color}90`); g.addColorStop(1, "rgba(0,0,0,0)");
