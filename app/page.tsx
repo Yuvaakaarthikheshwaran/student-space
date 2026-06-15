@@ -17,7 +17,9 @@ export default function DeepSpaceEngine() {
   
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
-  const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: 0, etaYears: -1 });
+  
+  // FIX 1: Initialize contractedDist to Infinity so the card doesn't prematurely trigger
+  const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: Infinity, etaYears: -1 });
   const [distances, setDistances] = useState<Record<string, number>>({});
   const [knownStars, setKnownStars] = useState<StarData[]>(CORE_STARS);
   const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]);
@@ -63,7 +65,7 @@ export default function DeepSpaceEngine() {
       const name = xml.querySelector("oname")?.textContent || searchQuery;
       
       const newStar: StarData = {
-        id: `API-${Date.now()}`, name, class: "API Class Unknown", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        id: `API-${Date.now()}`, name, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
       
@@ -88,6 +90,7 @@ export default function DeepSpaceEngine() {
     engineState.current.camera = { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 };
     engineState.current.clocks = { universe: 0, ship: 0 };
     setVelocityC(0); setTimeExp(0); setIsNavLocked(false); setTargetStar(CORE_STARS[1]);
+    setTelemetry({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: Infinity, etaYears: -1 });
   };
 
   useEffect(() => {
@@ -129,10 +132,10 @@ export default function DeepSpaceEngine() {
       let v = refs.vel, distToTgt = Math.hypot(refs.tgt.x - st.ship.x, refs.tgt.y - st.ship.y, refs.tgt.z - st.ship.z);
       let moveDist = v * dYrs;
 
-      // FIXED AUTO-BRAKE LOGIC
+      // FIXED 2: The Auto-Brake smoothly stops exactly 0.05 LY away and drops sliders to 0.
       if (refs.lock && v > 0) {
          if (moveDist >= distToTgt - 0.05) {
-             moveDist = Math.max(0, distToTgt - 0.05); // Snap cleanly to the arrival orbit
+             moveDist = Math.max(0, distToTgt - 0.05);
              v = 0; 
              setVelocityC(0);
              setTimeExp(0);
@@ -148,7 +151,7 @@ export default function DeepSpaceEngine() {
       let etaYears = -1;
       if (refs.lock && v > 0) etaYears = (distToTgt / gamma) / v;
 
-      if (Math.random() < 0.1) {
+      if (Math.random() < 0.15) {
         const liveDistances: Record<string, number> = {};
         refs.stars.forEach(s => {
            liveDistances[s.id] = Math.hypot(s.x - st.ship.x, s.y - st.ship.y, s.z - st.ship.z);
@@ -157,7 +160,7 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears });
       }
 
-      // FIXED BACKGROUND DUST (Visible at rest)
+      // FIX 3: Restored lineCap = "round" and minimum tail length to ensure dust draws when resting
       ctx.lineCap = "round";
       ctx.beginPath();
       bgDust.current.forEach(d => {
@@ -165,20 +168,18 @@ export default function DeepSpaceEngine() {
         if (dx > 50) d.x -= 100; if (dx < -50) d.x += 100;
         if (dy > 50) d.y -= 100; if (dy < -50) d.y += 100;
         if (dz > 50) d.z -= 100; if (dz < -50) d.z += 100;
+        const tail = Math.max(0.02, v * 2);
         const p1 = project(d.x, d.y, d.z, v);
-        // Force a tiny artificial tail so the dot mathematically draws even when v is 0
-        const tailDist = Math.max(0.005, v * 2);
-        const p2 = project(d.x + Math.sin(st.camera.yaw)*Math.cos(st.camera.pitch)*tailDist, d.y + Math.sin(st.camera.pitch)*tailDist, d.z + Math.cos(st.camera.yaw)*Math.cos(st.camera.pitch)*tailDist, v);
+        const p2 = project(d.x + Math.sin(st.camera.yaw)*Math.cos(st.camera.pitch)*tail, d.y + Math.sin(st.camera.pitch)*tail, d.z + Math.cos(st.camera.yaw)*Math.cos(st.camera.pitch)*tail, v);
         if (p1 && p2) { ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); }
       });
-      ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.5})`; ctx.lineWidth = v > 0.1 ? 2 : 1.5; ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.4})`; ctx.lineWidth = v > 0.1 ? 2 : 1.5; ctx.stroke();
 
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          // FIXED STAR SIZE LOGIC (Increased 0.0005 to 0.015 multiplier)
+          // FIX 4: Restored the 0.015 visual multiplier so stars visibly grow enormous as you approach
           const cr = Math.max(1.5, Math.min(w * 0.4, (s.radius * 0.015) * p.scale)), gr = Math.max(2, cr * 3);
-          
           if (p.dist > 0.0001) {
              const g = ctx.createRadialGradient(p.sx, p.sy, cr, p.sx, p.sy, gr);
              g.addColorStop(0, `${s.color}90`); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -214,6 +215,7 @@ export default function DeepSpaceEngine() {
          <button onClick={resetEngine} className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all">Reset Origin</button>
       </header>
 
+      {/* INTERACTIVE STELLAR SCANNER */}
       {isNavLocked && telemetry.contractedDist <= 0.051 && velocityC === 0 && (
          <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 bg-black/80 backdrop-blur-xl border border-cyan-500 p-6 rounded-lg shadow-[0_0_50px_rgba(34,211,238,0.2)] animate-pulse z-20">
              <h3 className="text-cyan-400 font-bold text-lg mb-1 uppercase">Stellar Scan Complete</h3>
@@ -291,8 +293,3 @@ export default function DeepSpaceEngine() {
     </main>
   );
 }
-
-
-
-
-
