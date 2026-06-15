@@ -14,6 +14,9 @@ const CORE_STARS: StarData[] = [
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
+  // NEW: Pre-flight launch sequence state
+  const [hasStarted, setHasStarted] = useState(false);
+  
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: Infinity, etaYears: -1 });
@@ -33,15 +36,27 @@ export default function DeepSpaceEngine() {
     mouse: { isDown: false, lastX: 0, lastY: 0 }, clocks: { universe: 0, ship: 0 }, lastFrameTime: 0
   });
 
-  const bgDust = useRef(Array.from({ length: 4000 }, () => ({
-    x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200, alpha: Math.random() * 0.8 + 0.2
+  // LAYER 1: Local Relativistic Dust (5,000 particles)
+  const bgDust = useRef(Array.from({ length: 5000 }, () => ({
+    x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200
   })));
+
+  // LAYER 2: Distant Static Milky Way (15,000 stars at Infinity)
+  const staticStars = useRef(Array.from({ length: 15000 }, () => {
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = Math.acos(2 * Math.random() - 1);
+    return {
+      x: 1000 * Math.sin(phi) * Math.cos(theta),
+      y: 1000 * Math.sin(phi) * Math.sin(theta),
+      z: 1000 * Math.cos(phi),
+      alpha: Math.random() * 0.5 + 0.1
+    };
+  }));
 
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearching(true); setSearchError("");
-    
     try {
       const sq = searchQuery.trim().toLowerCase();
       const localMatch = CORE_STARS.find(s => s.name.toLowerCase().includes(sq));
@@ -49,23 +64,17 @@ export default function DeepSpaceEngine() {
 
       const res = await fetch(`https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV?${encodeURIComponent(searchQuery)}`);
       const xmlText = await res.text();
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(xmlText, "text/xml");
+      const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+      if (!xml.querySelector("plx")) throw new Error("Parallax not found.");
 
-      const plxNode = xml.querySelector("plx");
-      if (!plxNode) throw new Error("Parallax not found.");
-
-      const plx = parseFloat(plxNode.textContent || "0");
-      const distLY = (1000 / plx) * 3.26156;
+      const distLY = (1000 / parseFloat(xml.querySelector("plx")!.textContent || "0")) * 3.26156;
       const raRad = parseFloat(xml.querySelector("jradeg")?.textContent || "0") * (Math.PI / 180);
       const decRad = parseFloat(xml.querySelector("jdedeg")?.textContent || "0") * (Math.PI / 180);
-      const name = xml.querySelector("oname")?.textContent || searchQuery;
       
       const newStar: StarData = {
-        id: `API-${Date.now()}`, name, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        id: `API-${Date.now()}`, name: xml.querySelector("oname")?.textContent || searchQuery, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
-      
       setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setIsNavLocked(true); setSearchQuery("");
     } catch (err: any) { setSearchError(err.message || "Uplink Failed"); } finally { setIsSearching(false); }
   };
@@ -75,7 +84,7 @@ export default function DeepSpaceEngine() {
     up: () => { engineState.current.mouse.isDown = false; },
     move: (e: React.MouseEvent) => {
       const m = engineState.current.mouse;
-      if (!m.isDown || isNavLocked) return;
+      if (!m.isDown || isNavLocked || !hasStarted) return;
       engineState.current.camera.targetYaw += (e.clientX - m.lastX) * 0.003;
       engineState.current.camera.targetPitch = Math.max(-1.57, Math.min(1.57, engineState.current.camera.targetPitch - (e.clientY - m.lastY) * 0.003));
       m.lastX = e.clientX; m.lastY = e.clientY;
@@ -91,19 +100,23 @@ export default function DeepSpaceEngine() {
   };
 
   useEffect(() => {
-    const ctx = canvasRef.current?.getContext("2d");
+    if (!hasStarted) return; // Halt physics until user clicks Launch
+
+    const ctx = canvasRef.current?.getContext("2d", { alpha: false });
     if (!ctx || !canvasRef.current) return;
     let w = canvasRef.current.width = window.innerWidth, h = canvasRef.current.height = window.innerHeight, reqId: number;
 
-    const project = (x: number, y: number, z: number, v_c: number) => {
+    const project = (x: number, y: number, z: number, v_c: number, isStatic = false) => {
       const st = engineState.current;
-      let dx = x - st.ship.x, dy = y - st.ship.y, dz = z - st.ship.z;
+      // Static stars ignore ship position to stay at infinity
+      let dx = isStatic ? x : x - st.ship.x, dy = isStatic ? y : y - st.ship.y, dz = isStatic ? z : z - st.ship.z;
       let tx = dx * Math.cos(st.camera.yaw) - dz * Math.sin(st.camera.yaw);
       let tz = dx * Math.sin(st.camera.yaw) + dz * Math.cos(st.camera.yaw);
       let ty = dy * Math.cos(st.camera.pitch) - tz * Math.sin(st.camera.pitch);
       let fz = dy * Math.sin(st.camera.pitch) + tz * Math.cos(st.camera.pitch);
       if (fz < 0.000001) return null;
-      return { sx: w/2 + tx * ((w/2) / fz * (1 - v_c * 0.2)), sy: h/2 + ty * ((w/2) / fz * (1 - v_c * 0.2)), scale: (w/2) / fz * (1 - v_c * 0.2), dist: fz };
+      const fov = isStatic ? 1 : (1 - v_c * 0.2); 
+      return { sx: w/2 + tx * ((w/2) / fz * fov), sy: h/2 + ty * ((w/2) / fz * fov), scale: (w/2) / fz * fov, dist: fz };
     };
 
     const animate = (timeNow: number) => {
@@ -146,6 +159,14 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears: (refs.lock && v > 0) ? (distToTgt / gamma) / v : -1 });
       }
 
+      // RENDER LAYER 1: 15,000 Static Distant Stars
+      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      staticStars.current.forEach(s => {
+         const p = project(s.x, s.y, s.z, v, true);
+         if (p) ctx.fillRect(p.sx, p.sy, 1, 1);
+      });
+
+      // RENDER LAYER 2: 5,000 Relativistic Local Dust Particles
       ctx.lineCap = "round"; ctx.beginPath();
       bgDust.current.forEach(d => {
         let dx = d.x - st.ship.x, dy = d.y - st.ship.y, dz = d.z - st.ship.z;
@@ -159,10 +180,10 @@ export default function DeepSpaceEngine() {
       });
       ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.4})`; ctx.lineWidth = v > 0.1 ? 2 : 1.5; ctx.stroke();
 
+      // RENDER LAYER 3: Targetable Star Systems
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          // FIX: Inverse-Square Distance Clamp. Stars are 1.2px dots until < 0.5 LY away.
           const bloom = p.dist < 0.5 ? Math.pow(0.5 / Math.max(0.0001, p.dist), 2) : 0;
           const cr = Math.max(1.2, Math.min(w * 0.4, s.radius * bloom));
           const gr = p.dist < 0.5 ? cr * 3 : 2; 
@@ -188,7 +209,38 @@ export default function DeepSpaceEngine() {
     reqId = requestAnimationFrame(animate);
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
-  }, []);
+  }, [hasStarted]);
+
+  // LAUNCH SCREEN RENDERER
+  if (!hasStarted) {
+    return (
+      <div className="flex items-center justify-center h-screen w-screen bg-[#020202] text-white font-mono selection:bg-cyan-900 relative overflow-hidden">
+         <div className="absolute inset-0 pointer-events-none z-0 opacity-[0.03] mix-blend-overlay" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 4px)" }}></div>
+         <div className="text-center z-10 max-w-2xl px-6">
+            <p className="text-cyan-500 font-bold tracking-[0.3em] uppercase text-xs mb-4 animate-pulse">Nav-Computer Initialized</p>
+            <h1 className="text-5xl font-black mb-6 tracking-tight">Relativistic Void Engine</h1>
+            
+            <div className="bg-white/5 border border-white/10 p-6 rounded-lg mb-8 text-left">
+                <p className="text-neutral-400 mb-4 text-sm leading-relaxed">
+                   <strong className="text-red-400">WARNING:</strong> At 99% the speed of light, you won't need a diet. Lorentz contraction will make your ship appear incredibly thin to the rest of the universe. 
+                </p>
+                <p className="text-neutral-400 text-sm leading-relaxed">
+                   Objects in the windshield are light-years further than they appear. Due to relativistic time dilation, your friends on Earth will age significantly faster than you. Proceed at your own existential risk.
+                </p>
+            </div>
+
+            <button 
+               onClick={() => setHasStarted(true)} 
+               className="bg-cyan-600 hover:bg-cyan-400 text-black px-12 py-4 rounded-lg font-black uppercase tracking-widest transition-all hover:shadow-[0_0_30px_rgba(34,211,238,0.4)]"
+            >
+               Ignite Engines
+            </button>
+         </div>
+      </div>
+    );
+  }
+
+  // MAIN SIMULATOR RENDERER
   return (
     <main className={`relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden ${isNavLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`} onMouseDown={handleMouse.down} onMouseUp={handleMouse.up} onMouseLeave={handleMouse.up} onMouseMove={handleMouse.move}>
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
