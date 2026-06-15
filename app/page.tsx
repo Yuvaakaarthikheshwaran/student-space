@@ -17,14 +17,24 @@ const REAL_STARS = [
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
+  // React State for UI
   const [velocityC, setVelocityC] = useState(0); 
   const [timeMultiplier, setTimeMultiplier] = useState(1); 
-  
   const [distances, setDistances] = useState<Record<string, number>>({});
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0 });
-
   const [targetStar, setTargetStar] = useState(REAL_STARS[1]); 
   const [isNavLocked, setIsNavLocked] = useState(false);
+
+  // Performance Optimization: Refs prevent the React UI from resetting the 120fps physics loop
+  const velRef = useRef(velocityC);
+  const timeRef = useRef(timeMultiplier);
+  const navLockRef = useRef(isNavLocked);
+  const targetStarRef = useRef(targetStar);
+  
+  useEffect(() => { velRef.current = velocityC; }, [velocityC]);
+  useEffect(() => { timeRef.current = timeMultiplier; }, [timeMultiplier]);
+  useEffect(() => { navLockRef.current = isNavLocked; }, [isNavLocked]);
+  useEffect(() => { targetStarRef.current = targetStar; }, [targetStar]);
 
   // 64-bit Engine State
   const engineState = useRef({
@@ -34,20 +44,14 @@ export default function DeepSpaceEngine() {
     clocks: { universe: 0, ship: 0 }
   });
 
-  const navLockRef = useRef(isNavLocked);
-  const targetStarRef = useRef(targetStar);
-  
-  useEffect(() => { navLockRef.current = isNavLocked; }, [isNavLocked]);
-  useEffect(() => { targetStarRef.current = targetStar; }, [targetStar]);
-
-  const bgDust = useRef(Array.from({ length: 4000 }, () => ({
-    x: (Math.random() - 0.5) * 200,
-    y: (Math.random() - 0.5) * 200,
-    z: (Math.random() - 0.5) * 200,
-    alpha: Math.random() * 0.5 + 0.1
+  // Physical Background Dust Generation
+  const bgDust = useRef(Array.from({ length: 3000 }, () => ({
+    x: (Math.random() - 0.5) * 100,
+    y: (Math.random() - 0.5) * 100,
+    z: (Math.random() - 0.5) * 100,
+    baseAlpha: Math.random() * 0.8 + 0.2
   })));
 
-  // --- CONTROLS FIX: Standard FPS Steering Restored ---
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
     engineState.current.mouse.lastX = e.clientX;
@@ -60,9 +64,7 @@ export default function DeepSpaceEngine() {
     
     const dx = e.clientX - mouse.lastX;
     const dy = e.clientY - mouse.lastY;
-    
-    // Fixed Horizontal Math: Drag Left = Turn Left (+dx instead of -dx)
-    engineState.current.camera.targetYaw += dx * 0.003;
+    engineState.current.camera.targetYaw += dx * 0.003; // Drag left = Look left
     engineState.current.camera.targetPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.targetPitch - dy * 0.003));
     
     mouse.lastX = e.clientX;
@@ -76,17 +78,6 @@ export default function DeepSpaceEngine() {
     setIsNavLocked(true); 
   };
 
-  // --- MASTER RESET SWITCH ---
-  const resetEngine = () => {
-    engineState.current.ship = { x: 0, y: 0.001, z: -1.0 };
-    engineState.current.camera = { pitch: 0, yaw: 0, targetPitch: 0, targetYaw: 0 };
-    engineState.current.clocks = { universe: 0, ship: 0 };
-    setVelocityC(0);
-    setTimeMultiplier(1);
-    setIsNavLocked(false);
-    setTargetStar(REAL_STARS[1]); 
-  };
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -98,12 +89,12 @@ export default function DeepSpaceEngine() {
     let reqId: number;
     const dtBase = 0.001; 
 
-    const project = (x: number, y: number, z: number, v_c: number, isDust = false) => {
+    const project = (x: number, y: number, z: number, v_c: number) => {
       const state = engineState.current;
       
-      let dx = x - (isDust ? 0 : state.ship.x);
-      let dy = y - (isDust ? 0 : state.ship.y);
-      let dz = z - (isDust ? 0 : state.ship.z);
+      let dx = x - state.ship.x;
+      let dy = y - state.ship.y;
+      let dz = z - state.ship.z;
 
       let tx = dx * Math.cos(state.camera.yaw) - dz * Math.sin(state.camera.yaw);
       let tz = dx * Math.sin(state.camera.yaw) + dz * Math.cos(state.camera.yaw);
@@ -112,7 +103,8 @@ export default function DeepSpaceEngine() {
 
       if (fz < 0.000001) return null; 
 
-      const aberration = Math.sqrt((1 - v_c) / (1 + v_c)); 
+      // SOFTENED Relativistic Aberration so you can actually see the star grow
+      const aberration = 1 - (v_c * 0.2); 
       const scale = (width / 2) * (1 / fz) * aberration;
 
       return { sx: width / 2 + tx * scale, sy: height / 2 + ty * scale, scale: scale, dist: fz };
@@ -120,6 +112,8 @@ export default function DeepSpaceEngine() {
 
     const animate = () => {
       const state = engineState.current;
+      const v = velRef.current;
+      const tMult = timeRef.current;
       
       if (navLockRef.current) {
         const tgt = targetStarRef.current;
@@ -137,13 +131,28 @@ export default function DeepSpaceEngine() {
       ctx.fillStyle = "#020202";
       ctx.fillRect(0, 0, width, height);
 
-      const gamma = 1 / Math.sqrt(1 - Math.pow(velocityC, 2));
-      const deltaYears = dtBase * timeMultiplier;
+      const gamma = 1 / Math.sqrt(1 - Math.pow(v, 2));
+      const deltaYears = dtBase * tMult;
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
-      if (velocityC > 0) {
-        const moveDist = velocityC * deltaYears; 
+      // SHIP MOVEMENT & ANTI-OVERSHOOT LOGIC
+      if (v > 0) {
+        let moveDist = v * deltaYears; 
+        
+        if (navLockRef.current) {
+            const tgt = targetStarRef.current;
+            const distToTgt = Math.hypot(tgt.x - state.ship.x, tgt.y - state.ship.y, tgt.z - state.ship.z);
+            
+            // Auto-Braking: If movement exceeds distance, stop exactly 0.05 LY away
+            if (moveDist > distToTgt - 0.05) {
+                moveDist = Math.max(0, distToTgt - 0.05);
+                // Dynamically drop UI sliders to prevent glitching
+                setVelocityC(0);
+                setTimeMultiplier(1);
+            }
+        }
+
         state.ship.x += Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
         state.ship.y += Math.sin(state.camera.pitch) * moveDist;
         state.ship.z += Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
@@ -151,10 +160,7 @@ export default function DeepSpaceEngine() {
 
       const currentDistances: Record<string, number> = {};
       REAL_STARS.forEach(star => {
-        const dx = star.x - state.ship.x;
-        const dy = star.y - state.ship.y;
-        const dz = star.z - state.ship.z;
-        currentDistances[star.id] = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        currentDistances[star.id] = Math.hypot(star.x - state.ship.x, star.y - state.ship.y, star.z - state.ship.z);
       });
 
       if (Math.random() < 0.1) {
@@ -162,27 +168,32 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: state.clocks.universe, shipYears: state.clocks.ship });
       }
 
+      // TRUE WORLD-SPACE DUST GENERATION
       bgDust.current.forEach(dust => {
-        if (velocityC > 0) {
-           const moveDist = velocityC * deltaYears * 10; 
-           dust.x -= Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
-           dust.y -= Math.sin(state.camera.pitch) * moveDist;
-           dust.z -= Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
-           
-           if (dust.x > 100) dust.x = -100; if (dust.x < -100) dust.x = 100;
-           if (dust.y > 100) dust.y = -100; if (dust.y < -100) dust.y = 100;
-           if (dust.z > 100) dust.z = -100; if (dust.z < -100) dust.z = 100;
-        }
+        let dx = dust.x - state.ship.x;
+        let dy = dust.y - state.ship.y;
+        let dz = dust.z - state.ship.z;
 
-        const proj = project(dust.x, dust.y, dust.z, velocityC, true);
+        // Wrap dust around ship endlessly creating infinite physical parallax
+        const boxSize = 50; 
+        if (dx > boxSize) dust.x -= boxSize * 2; if (dx < -boxSize) dust.x += boxSize * 2;
+        if (dy > boxSize) dust.y -= boxSize * 2; if (dy < -boxSize) dust.y += boxSize * 2;
+        if (dz > boxSize) dust.z -= boxSize * 2; if (dz < -boxSize) dust.z += boxSize * 2;
+
+        const proj = project(dust.x, dust.y, dust.z, v);
         if (proj) {
-          ctx.fillStyle = `rgba(255, 255, 255, ${dust.alpha})`;
-          ctx.fillRect(proj.sx, proj.sy, 1, 1);
+          // Fade dust in and out at edges so it doesn't pop into existence
+          const distToShip = Math.hypot(dx, dy, dz);
+          const fade = Math.max(0, 1 - (distToShip / boxSize));
+          
+          ctx.fillStyle = `rgba(255, 255, 255, ${dust.baseAlpha * fade})`;
+          ctx.fillRect(proj.sx, proj.sy, 1.5, 1.5);
         }
       });
 
+      // DRAW REAL TARGETABLE STARS
       REAL_STARS.forEach(star => {
-        const proj = project(star.x, star.y, star.z, velocityC);
+        const proj = project(star.x, star.y, star.z, v);
         
         if (proj) {
           const cinematicScale = star.radius * 0.0005;
@@ -231,7 +242,7 @@ export default function DeepSpaceEngine() {
     const handleResize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
     window.addEventListener("resize", handleResize);
     return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", handleResize); };
-  }, [velocityC, timeMultiplier]);
+  }, []);
 
   return (
     <main 
@@ -243,16 +254,6 @@ export default function DeepSpaceEngine() {
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
-      {/* HEADER: EMERGENCY RESET */}
-      <header className="absolute top-6 left-6 z-10">
-         <button 
-            onClick={resetEngine}
-            className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all"
-          >
-            System Override: Reset Origin
-         </button>
-      </header>
-
       {/* CROSSHAIR */}
       {!isNavLocked && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-30">
@@ -261,7 +262,7 @@ export default function DeepSpaceEngine() {
         </div>
       )}
 
-      {/* RIGHT PANEL */}
+      {/* RIGHT PANEL: LIVE DISTANCE MATRIX TO ALL STARS */}
       <aside className="absolute top-6 right-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-lg pointer-events-auto shadow-2xl max-h-[85vh] flex flex-col z-10">
         <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
           <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest">Targeting Matrix</h2>
@@ -297,7 +298,7 @@ export default function DeepSpaceEngine() {
         </div>
       </aside>
 
-      {/* BOTTOM PANEL */}
+      {/* BOTTOM PANEL: FLIGHT CONTROLS & RELATIVITY */}
       <footer className="absolute bottom-6 left-6 w-[500px] bg-black/80 backdrop-blur-3xl border border-white/10 p-6 rounded-xl pointer-events-auto shadow-2xl z-10">
         
         {isNavLocked && (
