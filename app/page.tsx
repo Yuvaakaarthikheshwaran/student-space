@@ -5,14 +5,16 @@ type StarData = { id: string; name: string; x: number; y: number; z: number; col
 
 const CORE_STARS: StarData[] = [
   { id: "SOL", name: "Sun (Sol)", class: "G2V Yellow Dwarf", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1, distanceLY: 0, temp: 5778, mass: 1 },
-  { id: "CEN", name: "Alpha Centauri", class: "G2V/K1V", x: 4.37, y: 0, z: 0, color: "#fde047", radius: 1.1, distanceLY: 4.37, temp: 5790, mass: 1.1 },
+  { id: "CEN", name: "Alpha Centauri", class: "G2V/K1V Binary", x: 4.37, y: 0, z: 0, color: "#fde047", radius: 1.1, distanceLY: 4.37, temp: 5790, mass: 1.1 },
   { id: "SIR", name: "Sirius A", class: "A1V Main Sequence", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.71, distanceLY: 8.6, temp: 9940, mass: 2.02 },
   { id: "VEG", name: "Vega", class: "A0V Main Sequence", x: 15.0, y: 15.0, z: -10.0, color: "#67e8f9", radius: 2.36, distanceLY: 25.0, temp: 9602, mass: 2.13 },
   { id: "BET", name: "Betelgeuse", class: "M1-2 Red Supergiant", x: -400.0, y: -100.0, z: 300.0, color: "#dc2626", radius: 887.0, distanceLY: 548.0, temp: 3600, mass: 16.5 }
 ];
+const SECONDS_PER_YEAR = 31557600;
 
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: 0, etaYears: -1 });
@@ -31,34 +33,38 @@ export default function DeepSpaceEngine() {
     mouse: { isDown: false, lastX: 0, lastY: 0 }, clocks: { universe: 0, ship: 0 }, lastFrameTime: 0
   });
 
-  const bgDust = useRef(Array.from({ length: 4000 }, () => ({
+  const bgDust = useRef(Array.from({ length: 8000 }, () => ({
     x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200, alpha: Math.random() * 0.8 + 0.2
   })));
 
+  // --- NEW UNBREAKABLE XML SESAME API UPLINK ---
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearching(true); setSearchError("");
     
     try {
-      const sq = searchQuery.trim().toLowerCase().replace(/'/g, "''");
+      const sq = searchQuery.trim().toLowerCase();
       const localMatch = CORE_STARS.find(s => s.name.toLowerCase().includes(sq));
       if (localMatch) { setTargetStar(localMatch); setIsNavLocked(true); setIsSearching(false); setSearchQuery(""); return; }
 
-      const adql = `SELECT basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM ident JOIN basic ON ident.oidref = basic.oid JOIN parallaxes ON basic.oid = parallaxes.oidref WHERE LOWER(ident.id) = '${sq}' OR LOWER(ident.id) = 'name ${sq}'`;
-      const res = await fetch(`https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&maxrec=1&query=${encodeURIComponent(adql)}`);
-      
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.error || !data.data || !data.data.length) throw new Error("Star not found.");
+      // Fetch from the robust Strasbourg Sesame XML endpoint
+      const res = await fetch(`https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV?${encodeURIComponent(searchQuery)}`);
+      const xmlText = await res.text();
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, "text/xml");
 
-      const d = data.data[0];
-      const name = String(d[0]).replace(/b'|'/g, '').trim();
-      const distLY = (1000 / parseFloat(d[3])) * 3.26156;
-      const raRad = parseFloat(d[1]) * (Math.PI / 180), decRad = parseFloat(d[2]) * (Math.PI / 180);
+      const plxNode = xml.querySelector("plx");
+      if (!plxNode) throw new Error("Distance/Parallax not found for this star.");
+
+      const plx = parseFloat(plxNode.textContent || "0");
+      const distLY = (1000 / plx) * 3.26156;
+      const raRad = parseFloat(xml.querySelector("jradeg")?.textContent || "0") * (Math.PI / 180);
+      const decRad = parseFloat(xml.querySelector("jdedeg")?.textContent || "0") * (Math.PI / 180);
+      const name = xml.querySelector("oname")?.textContent || searchQuery;
       
       const newStar: StarData = {
-        id: `API-${Date.now()}`, name, class: "API Unknown", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        id: `API-${Date.now()}`, name, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
       
@@ -101,17 +107,14 @@ export default function DeepSpaceEngine() {
       return { sx: w/2 + tx * ((w/2) / fz * (1 - v_c * 0.2)), sy: h/2 + ty * ((w/2) / fz * (1 - v_c * 0.2)), scale: (w/2) / fz * (1 - v_c * 0.2), dist: fz };
     };
 
-    // FIXED: timeNow parameter added to prevent NaN fatal error
     const animate = (timeNow: number) => {
       const st = engineState.current, refs = stateRefs.current;
-      
       if (!st.lastFrameTime) st.lastFrameTime = timeNow;
-      const dRealSec = (timeNow - st.lastFrameTime) / 1000;
+      
+      // TRUE REAL-TIME CALCULATION
+      const dRealSec = (timeNow - st.lastFrameTime) / 1000; 
       st.lastFrameTime = timeNow;
-
-      // Restored exact exponential multiplier logic
-      const timeMult = Math.pow(10, refs.timeExp);
-      const dYrs = (dRealSec * timeMult) / 31557600;
+      const dYrs = (dRealSec * Math.pow(10, refs.timeExp)) / SECONDS_PER_YEAR;
 
       if (refs.lock) {
         let dx = refs.tgt.x - st.ship.x, dy = refs.tgt.y - st.ship.y, dz = refs.tgt.z - st.ship.z;
@@ -126,7 +129,6 @@ export default function DeepSpaceEngine() {
       st.clocks.universe += dYrs; st.clocks.ship += dYrs / gamma;
       
       let v = refs.vel, distToTgt = Math.hypot(refs.tgt.x - st.ship.x, refs.tgt.y - st.ship.y, refs.tgt.z - st.ship.z);
-      
       if (refs.lock && v > 0 && v * dYrs > distToTgt - 0.05) { v = 0; setVelocityC(0); }
       
       if (v > 0) {
@@ -175,7 +177,7 @@ export default function DeepSpaceEngine() {
       reqId = requestAnimationFrame(animate);
     };
 
-    reqId = requestAnimationFrame(performance.now);
+    reqId = requestAnimationFrame(animate);
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
   }, []);
@@ -189,7 +191,6 @@ export default function DeepSpaceEngine() {
          <button onClick={resetEngine} className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all">Reset Origin</button>
       </header>
 
-      {/* INTERACTIVE STELLAR SCANNER */}
       {isNavLocked && telemetry.contractedDist < 0.1 && velocityC === 0 && (
          <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 bg-black/80 backdrop-blur-xl border border-cyan-500 p-6 rounded-lg shadow-[0_0_50px_rgba(34,211,238,0.2)] animate-pulse z-20">
              <h3 className="text-cyan-400 font-bold text-lg mb-1 uppercase">Stellar Scan Complete</h3>
@@ -230,7 +231,7 @@ export default function DeepSpaceEngine() {
             return (
               <div key={star.id} className={`p-2 rounded flex flex-col border ${isTgt ? "bg-cyan-950/40 border-cyan-500" : "bg-white/5 border-white/5"}`}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-bold flex items-center gap-2">{star.name}</span>
+                  <span className="text-xs font-bold flex items-center gap-2">{star.name} {star.isCustom && <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1 rounded uppercase border border-indigo-500/30">API</span>}</span>
                   <button onClick={() => { setTargetStar(star); setIsNavLocked(true); }} className={`text-[9px] px-2 py-0.5 rounded uppercase ${isTgt ? "bg-cyan-500 text-black font-bold" : "bg-cyan-900/50 text-cyan-300"}`}>{isTgt ? "Tracking" : "Lock On"}</button>
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-400"><span>Target Dist:</span><span className="text-white font-bold">{Math.hypot(star.x - engineState.current.ship.x, star.y - engineState.current.ship.y, star.z - engineState.current.ship.z).toFixed(4)} LY</span></div>
@@ -265,6 +266,3 @@ export default function DeepSpaceEngine() {
     </main>
   );
 }
-
-
-
