@@ -1,17 +1,13 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 
-// --- TRUE LOCAL STELLAR NEIGHBORHOOD DATABASE ---
-const REAL_STARS = [
-  { id: "SOL", name: "Sun (Sol)", class: "G-Type", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1 },
-  { id: "CEN", name: "Alpha Centauri", class: "G/K-Type", x: 4.37, y: 0.0, z: 0.0, color: "#fde047", radius: 1.1 },
-  { id: "BAR", name: "Barnard's Star", class: "M-Type Red Dwarf", x: 3.5, y: 4.0, z: 2.0, color: "#ef4444", radius: 0.2 },
-  { id: "WOL", name: "Wolf 359", class: "M-Type Flare Star", x: -1.0, y: 7.0, z: 3.0, color: "#f87171", radius: 0.16 },
-  { id: "SIR", name: "Sirius A", class: "A-Type Main Sequence", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.7 },
-  { id: "ERI", name: "Epsilon Eridani", class: "K-Type Main Sequence", x: -5.0, y: -8.0, z: 5.0, color: "#fdba74", radius: 0.73 },
-  { id: "TAU", name: "Tau Ceti", class: "G-Type Main Sequence", x: -11.0, y: 0.0, z: -4.0, color: "#fde047", radius: 0.79 },
-  { id: "VEG", name: "Vega", class: "A-Type Main Sequence", x: 15.0, y: 15.0, z: -10.0, color: "#67e8f9", radius: 2.3 },
-  { id: "BET", name: "Betelgeuse", class: "M-Type Red Supergiant", x: -400.0, y: -100.0, z: 300.0, color: "#dc2626", radius: 887.0 }
+// --- CORE SYSTEM DATA ---
+type StarData = { id: string; name: string; x: number; y: number; z: number; color: string; radius: number; distanceLY: number; isCustom?: boolean };
+
+const CORE_STARS: StarData[] = [
+  { id: "SOL", name: "Sun (Sol)", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1, distanceLY: 0 },
+  { id: "CEN", name: "Alpha Centauri", x: 4.37, y: 0.0, z: 0.0, color: "#fde047", radius: 1.1, distanceLY: 4.37 },
+  { id: "SIR", name: "Sirius A", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.7, distanceLY: 8.6 }
 ];
 
 export default function DeepSpaceEngine() {
@@ -20,21 +16,30 @@ export default function DeepSpaceEngine() {
   // React State for UI
   const [velocityC, setVelocityC] = useState(0); 
   const [timeMultiplier, setTimeMultiplier] = useState(1); 
-  const [distances, setDistances] = useState<Record<string, number>>({});
-  const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0 });
-  const [targetStar, setTargetStar] = useState(REAL_STARS[1]); 
+  const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: 0 });
+  
+  // Database & Targeting State
+  const [knownStars, setKnownStars] = useState<StarData[]>(CORE_STARS);
+  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]); 
   const [isNavLocked, setIsNavLocked] = useState(false);
+  
+  // API Search State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
-  // Performance Optimization: Refs prevent the React UI from resetting the 120fps physics loop
+  // Performance Refs
   const velRef = useRef(velocityC);
   const timeRef = useRef(timeMultiplier);
   const navLockRef = useRef(isNavLocked);
   const targetStarRef = useRef(targetStar);
+  const knownStarsRef = useRef(knownStars);
   
   useEffect(() => { velRef.current = velocityC; }, [velocityC]);
   useEffect(() => { timeRef.current = timeMultiplier; }, [timeMultiplier]);
   useEffect(() => { navLockRef.current = isNavLocked; }, [isNavLocked]);
   useEffect(() => { targetStarRef.current = targetStar; }, [targetStar]);
+  useEffect(() => { knownStarsRef.current = knownStars; }, [knownStars]);
 
   // 64-bit Engine State
   const engineState = useRef({
@@ -44,13 +49,73 @@ export default function DeepSpaceEngine() {
     clocks: { universe: 0, ship: 0 }
   });
 
-  // Physical Background Dust Generation
   const bgDust = useRef(Array.from({ length: 3000 }, () => ({
-    x: (Math.random() - 0.5) * 100,
-    y: (Math.random() - 0.5) * 100,
-    z: (Math.random() - 0.5) * 100,
+    x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 100, z: (Math.random() - 0.5) * 100,
     baseAlpha: Math.random() * 0.8 + 0.2
   })));
+
+  // --- LIVE SIMBAD API SEARCH ---
+  const searchSimbadAPI = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    
+    setIsSearching(true);
+    setSearchError("");
+
+    try {
+      // ADQL Query to Strasbourg Data Center
+      const adql = `SELECT TOP 1 basic.MAIN_ID, basic.ra, basic.dec, parallaxes.plx FROM basic JOIN parallaxes ON basic.oid = parallaxes.oidref WHERE basic.MAIN_ID ILIKE '%${searchQuery.trim()}%' AND parallaxes.plx > 0`;
+      const url = `https://simbad.u-strasbg.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=${encodeURIComponent(adql)}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!data.data || data.data.length === 0) {
+        setSearchError("Star not found in global database.");
+        setIsSearching(false);
+        return;
+      }
+
+      // Extract Data: [0] = Name, [1] = RA, [2] = Dec, [3] = Parallax
+      const starData = data.data[0];
+      const name = String(starData[0]).replace(/b'/g, '').replace(/'/g, '').trim();
+      const ra = parseFloat(starData[1]);
+      const dec = parseFloat(starData[2]);
+      const plx = parseFloat(starData[3]); // Parallax in milliarcseconds
+
+      // Astrophysics Math: Convert Spherical to Cartesian LY
+      const distParsecs = 1000 / plx;
+      const distLY = distParsecs * 3.26156;
+      
+      const raRad = ra * (Math.PI / 180);
+      const decRad = dec * (Math.PI / 180);
+
+      const x = distLY * Math.cos(decRad) * Math.cos(raRad);
+      const y = distLY * Math.sin(decRad);
+      const z = distLY * Math.cos(decRad) * Math.sin(raRad);
+
+      const newStar: StarData = {
+        id: `API-${Date.now()}`,
+        name: name,
+        x: x, y: y, z: z,
+        color: "#a5b4fc", // Default pale blue for API stars
+        radius: 1.5,
+        distanceLY: distLY,
+        isCustom: true
+      };
+
+      // Add to local matrix and lock onto it
+      setKnownStars(prev => [...prev, newStar]);
+      setTargetStar(newStar);
+      setIsNavLocked(true);
+      setSearchQuery("");
+
+    } catch (err) {
+      setSearchError("API Uplink Failed.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     engineState.current.mouse.isDown = true;
@@ -64,17 +129,14 @@ export default function DeepSpaceEngine() {
     
     const dx = e.clientX - mouse.lastX;
     const dy = e.clientY - mouse.lastY;
-    engineState.current.camera.targetYaw += dx * 0.003; // Drag left = Look left
+    engineState.current.camera.targetYaw += dx * 0.003; 
     engineState.current.camera.targetPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, engineState.current.camera.targetPitch - dy * 0.003));
-    
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
   };
 
-  const engageNavLock = (starId: string) => {
-    const target = REAL_STARS.find(s => s.id === starId);
-    if (!target) return;
-    setTargetStar(target);
+  const engageNavLock = (star: StarData) => {
+    setTargetStar(star);
     setIsNavLocked(true); 
   };
 
@@ -91,10 +153,7 @@ export default function DeepSpaceEngine() {
 
     const project = (x: number, y: number, z: number, v_c: number) => {
       const state = engineState.current;
-      
-      let dx = x - state.ship.x;
-      let dy = y - state.ship.y;
-      let dz = z - state.ship.z;
+      let dx = x - state.ship.x; let dy = y - state.ship.y; let dz = z - state.ship.z;
 
       let tx = dx * Math.cos(state.camera.yaw) - dz * Math.sin(state.camera.yaw);
       let tz = dx * Math.sin(state.camera.yaw) + dz * Math.cos(state.camera.yaw);
@@ -103,10 +162,8 @@ export default function DeepSpaceEngine() {
 
       if (fz < 0.000001) return null; 
 
-      // SOFTENED Relativistic Aberration so you can actually see the star grow
       const aberration = 1 - (v_c * 0.2); 
       const scale = (width / 2) * (1 / fz) * aberration;
-
       return { sx: width / 2 + tx * scale, sy: height / 2 + ty * scale, scale: scale, dist: fz };
     };
 
@@ -114,12 +171,11 @@ export default function DeepSpaceEngine() {
       const state = engineState.current;
       const v = velRef.current;
       const tMult = timeRef.current;
+      const activeStars = knownStarsRef.current;
       
       if (navLockRef.current) {
         const tgt = targetStarRef.current;
-        const dx = tgt.x - state.ship.x;
-        const dy = tgt.y - state.ship.y;
-        const dz = tgt.z - state.ship.z;
+        const dx = tgt.x - state.ship.x; const dy = tgt.y - state.ship.y; const dz = tgt.z - state.ship.z;
         const distanceXZ = Math.sqrt(dx * dx + dz * dz);
         state.camera.targetYaw = Math.atan2(dx, dz);
         state.camera.targetPitch = Math.atan2(dy, distanceXZ);
@@ -128,102 +184,97 @@ export default function DeepSpaceEngine() {
       state.camera.yaw += (state.camera.targetYaw - state.camera.yaw) * 0.1;
       state.camera.pitch += (state.camera.targetPitch - state.camera.pitch) * 0.1;
 
-      ctx.fillStyle = "#020202";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, width, height);
 
       const gamma = 1 / Math.sqrt(1 - Math.pow(v, 2));
       const deltaYears = dtBase * tMult;
       state.clocks.universe += deltaYears;
       state.clocks.ship += deltaYears / gamma;
 
-      // SHIP MOVEMENT & ANTI-OVERSHOOT LOGIC
-      if (v > 0) {
-        let moveDist = v * deltaYears; 
-        
-        if (navLockRef.current) {
-            const tgt = targetStarRef.current;
-            const distToTgt = Math.hypot(tgt.x - state.ship.x, tgt.y - state.ship.y, tgt.z - state.ship.z);
-            
-            // Auto-Braking: If movement exceeds distance, stop exactly 0.05 LY away
-            if (moveDist > distToTgt - 0.05) {
-                moveDist = Math.max(0, distToTgt - 0.05);
-                // Dynamically drop UI sliders to prevent glitching
-                setVelocityC(0);
-                setTimeMultiplier(1);
-            }
-        }
+      let activeV = v;
+      const tgt = targetStarRef.current;
+      const distToTgt = Math.hypot(tgt.x - state.ship.x, tgt.y - state.ship.y, tgt.z - state.ship.z);
 
+      if (navLockRef.current && v > 0) {
+          const frameDist = v * deltaYears;
+          if (frameDist > distToTgt - 0.05) {
+              activeV = 0; setVelocityC(0); setTimeMultiplier(1);
+          }
+      }
+
+      if (activeV > 0) {
+        const moveDist = activeV * deltaYears; 
         state.ship.x += Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
         state.ship.y += Math.sin(state.camera.pitch) * moveDist;
         state.ship.z += Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * moveDist;
       }
 
-      const currentDistances: Record<string, number> = {};
-      REAL_STARS.forEach(star => {
-        currentDistances[star.id] = Math.hypot(star.x - state.ship.x, star.y - state.ship.y, star.z - state.ship.z);
-      });
-
       if (Math.random() < 0.1) {
-        setDistances(currentDistances);
-        setTelemetry({ gamma, universeYears: state.clocks.universe, shipYears: state.clocks.ship });
+        setTelemetry({ 
+            gamma, universeYears: state.clocks.universe, shipYears: state.clocks.ship,
+            contractedDist: distToTgt / gamma 
+        });
       }
 
-      // TRUE WORLD-SPACE DUST GENERATION
       bgDust.current.forEach(dust => {
-        let dx = dust.x - state.ship.x;
-        let dy = dust.y - state.ship.y;
-        let dz = dust.z - state.ship.z;
-
-        // Wrap dust around ship endlessly creating infinite physical parallax
+        let dx = dust.x - state.ship.x; let dy = dust.y - state.ship.y; let dz = dust.z - state.ship.z;
         const boxSize = 50; 
         if (dx > boxSize) dust.x -= boxSize * 2; if (dx < -boxSize) dust.x += boxSize * 2;
         if (dy > boxSize) dust.y -= boxSize * 2; if (dy < -boxSize) dust.y += boxSize * 2;
         if (dz > boxSize) dust.z -= boxSize * 2; if (dz < -boxSize) dust.z += boxSize * 2;
 
-        const proj = project(dust.x, dust.y, dust.z, v);
-        if (proj) {
-          // Fade dust in and out at edges so it doesn't pop into existence
+        const proj = project(dust.x, dust.y, dust.z, activeV);
+        const projTail = project(
+            dust.x + Math.sin(state.camera.yaw) * Math.cos(state.camera.pitch) * activeV * 2, 
+            dust.y + Math.sin(state.camera.pitch) * activeV * 2, 
+            dust.z + Math.cos(state.camera.yaw) * Math.cos(state.camera.pitch) * activeV * 2, 
+            activeV
+        );
+
+        if (proj && projTail) {
           const distToShip = Math.hypot(dx, dy, dz);
           const fade = Math.max(0, 1 - (distToShip / boxSize));
           
-          ctx.fillStyle = `rgba(255, 255, 255, ${dust.baseAlpha * fade})`;
-          ctx.fillRect(proj.sx, proj.sy, 1.5, 1.5);
+          const distFromCenter = Math.hypot(proj.sx - width / 2, proj.sy - height / 2);
+          let r = 255, g = 255, b = 255;
+          if (activeV > 0.1) {
+              const shift = Math.min(1, distFromCenter / (width / 2)); 
+              r = Math.floor(255 * shift); b = Math.floor(255 * (1 - shift)); g = Math.floor(255 * (1 - shift * 0.5));
+          }
+
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${dust.baseAlpha * fade})`;
+          ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(proj.sx, proj.sy); ctx.lineTo(projTail.sx, projTail.sy); ctx.stroke();
         }
       });
 
-      // DRAW REAL TARGETABLE STARS
-      REAL_STARS.forEach(star => {
-        const proj = project(star.x, star.y, star.z, v);
-        
+      let targetOnScreen = false;
+      activeStars.forEach(star => {
+        const proj = project(star.x, star.y, star.z, activeV);
+        const isTarget = star.id === targetStarRef.current.id;
+
         if (proj) {
+          if (isTarget && proj.sx > 0 && proj.sx < width && proj.sy > 0 && proj.sy < height) targetOnScreen = true;
+
           const cinematicScale = star.radius * 0.0005;
           const coreRadius = Math.max(1, Math.min(width * 0.4, cinematicScale * proj.scale));
           const glowRadius = Math.max(2, coreRadius * 3);
 
           if (proj.dist > 0.0001) {
              const gradient = ctx.createRadialGradient(proj.sx, proj.sy, coreRadius, proj.sx, proj.sy, glowRadius);
-             gradient.addColorStop(0, `${star.color}90`); 
-             gradient.addColorStop(1, "rgba(0,0,0,0)");
-             ctx.fillStyle = gradient;
-             ctx.beginPath(); ctx.arc(proj.sx, proj.sy, glowRadius, 0, Math.PI * 2); ctx.fill();
-
-             ctx.fillStyle = "#ffffff";
-             ctx.beginPath(); ctx.arc(proj.sx, proj.sy, coreRadius, 0, Math.PI * 2); ctx.fill();
+             gradient.addColorStop(0, `${star.color}90`); gradient.addColorStop(1, "rgba(0,0,0,0)");
+             ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(proj.sx, proj.sy, glowRadius, 0, Math.PI * 2); ctx.fill();
+             ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(proj.sx, proj.sy, coreRadius, 0, Math.PI * 2); ctx.fill();
           }
 
-          if ((proj.dist < 100 && proj.dist > 0.1) || star.id === targetStarRef.current.id) {
-            ctx.fillStyle = star.id === targetStarRef.current.id ? "rgba(34, 211, 238, 0.9)" : "rgba(255,255,255,0.5)";
-            ctx.font = star.id === targetStarRef.current.id ? "bold 12px monospace" : "10px monospace";
+          if ((proj.dist < 100 && proj.dist > 0.1) || isTarget) {
+            ctx.fillStyle = isTarget ? "rgba(34, 211, 238, 0.9)" : "rgba(255,255,255,0.5)";
+            ctx.font = isTarget ? "bold 12px monospace" : "10px monospace";
             ctx.fillText(star.name, proj.sx + glowRadius + 5, proj.sy + 3);
           }
 
-          if (star.id === targetStarRef.current.id && navLockRef.current) {
-            ctx.strokeStyle = "rgba(34, 211, 238, 0.8)";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(proj.sx, proj.sy, glowRadius + 15, 0, Math.PI * 2);
-            ctx.stroke();
-            
+          if (isTarget && navLockRef.current) {
+            ctx.strokeStyle = "rgba(34, 211, 238, 0.8)"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(proj.sx, proj.sy, glowRadius + 15, 0, Math.PI * 2); ctx.stroke();
             ctx.beginPath();
             ctx.moveTo(proj.sx, proj.sy - glowRadius - 20); ctx.lineTo(proj.sx, proj.sy - glowRadius - 10);
             ctx.moveTo(proj.sx, proj.sy + glowRadius + 20); ctx.lineTo(proj.sx, proj.sy + glowRadius + 10);
@@ -231,8 +282,22 @@ export default function DeepSpaceEngine() {
             ctx.moveTo(proj.sx + glowRadius + 20, proj.sy); ctx.lineTo(proj.sx + glowRadius + 10, proj.sy);
             ctx.stroke();
           }
-        }
+        } else if (isTarget) { targetOnScreen = false; }
       });
+
+      if (!targetOnScreen) {
+        const tgt = targetStarRef.current;
+        let dx = tgt.x - state.ship.x; let dy = tgt.y - state.ship.y; let dz = tgt.z - state.ship.z;
+        let tx = dx * Math.cos(state.camera.yaw) - dz * Math.sin(state.camera.yaw);
+        let ty = dy * Math.cos(state.camera.pitch) - (dx * Math.sin(state.camera.yaw) + dz * Math.cos(state.camera.yaw)) * Math.sin(state.camera.pitch);
+        
+        const angle = Math.atan2(ty, tx);
+        const arrowX = width/2 + Math.cos(angle) * (Math.min(width/2, height/2) - 50);
+        const arrowY = height/2 + Math.sin(angle) * (Math.min(width/2, height/2) - 50);
+
+        ctx.fillStyle = "rgba(34, 211, 238, 0.8)"; ctx.beginPath(); ctx.arc(arrowX, arrowY, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.font = "10px monospace"; ctx.fillText("TARGET", arrowX + 10, arrowY + 4);
+      }
 
       reqId = requestAnimationFrame(animate);
     };
@@ -246,11 +311,8 @@ export default function DeepSpaceEngine() {
 
   return (
     <main 
-      className={`relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden selection:bg-cyan-900 ${isNavLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onMouseMove={handleMouseMove}
+      className={`relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden selection:bg-indigo-900 ${isNavLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
+      onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onMouseMove={handleMouseMove}
     >
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
 
@@ -262,35 +324,52 @@ export default function DeepSpaceEngine() {
         </div>
       )}
 
-      {/* RIGHT PANEL: LIVE DISTANCE MATRIX TO ALL STARS */}
-      <aside className="absolute top-6 right-6 w-80 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-lg pointer-events-auto shadow-2xl max-h-[85vh] flex flex-col z-10">
-        <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
-          <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest">Targeting Matrix</h2>
-          <button 
-            onClick={() => setIsNavLocked(false)}
-            className={`text-[9px] px-2 py-1 rounded uppercase transition-colors ${isNavLocked ? "bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/40" : "bg-neutral-800 text-neutral-500 border border-neutral-700 hover:bg-neutral-700"}`}
-          >
+      {/* RIGHT PANEL: API SEARCH & TARGETING */}
+      <aside className="absolute top-6 right-6 w-80 bg-black/60 backdrop-blur-xl border border-indigo-500/20 p-4 rounded-lg pointer-events-auto shadow-[0_0_30px_rgba(99,102,241,0.05)] max-h-[85vh] flex flex-col z-10">
+        
+        {/* GLOBAL SEARCH */}
+        <div className="mb-4">
+          <p className="text-[10px] text-indigo-400 uppercase tracking-widest mb-2 font-bold flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            Global SIMBAD Uplink
+          </p>
+          <form onSubmit={searchSimbadAPI} className="flex gap-2">
+            <input 
+              type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Query star name (e.g., Betelgeuse)"
+              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder:text-neutral-600 focus:outline-none focus:border-indigo-500 transition-colors"
+            />
+            <button type="submit" disabled={isSearching} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors disabled:opacity-50">
+              {isSearching ? "..." : "SCAN"}
+            </button>
+          </form>
+          {searchError && <p className="text-[9px] text-red-400 mt-1">{searchError}</p>}
+        </div>
+
+        <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
+          <h2 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Active Waypoints</h2>
+          <button onClick={() => setIsNavLocked(false)} className={`text-[9px] px-2 py-1 rounded uppercase transition-colors ${isNavLocked ? "bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/40" : "bg-neutral-800 text-neutral-500 border border-neutral-700 hover:bg-neutral-700"}`}>
             {isNavLocked ? "Unlock Camera" : "Manual Flight"}
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
-          {REAL_STARS.map(star => {
+        <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
+          {knownStars.map(star => {
             const isTargeted = targetStar.id === star.id && isNavLocked;
             return (
               <div key={star.id} className={`p-2 rounded flex flex-col transition-colors border ${isTargeted ? "bg-cyan-950/40 border-cyan-500" : "bg-white/5 border-white/5 hover:bg-white/10"}`}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-bold">{star.name}</span>
-                  <button 
-                    onClick={() => engageNavLock(star.id)} 
-                    className={`text-[9px] px-2 py-0.5 rounded uppercase transition-colors ${isTargeted ? "bg-cyan-500 text-black font-bold" : "bg-cyan-900/50 text-cyan-300 hover:bg-cyan-500 hover:text-black"}`}
-                  >
+                  <span className="text-xs font-bold flex items-center gap-2">
+                    {star.name}
+                    {star.isCustom && <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1 rounded uppercase border border-indigo-500/30">API</span>}
+                  </span>
+                  <button onClick={() => engageNavLock(star)} className={`text-[9px] px-2 py-0.5 rounded uppercase transition-colors ${isTargeted ? "bg-cyan-500 text-black font-bold" : "bg-cyan-900/50 text-cyan-300 hover:bg-cyan-500 hover:text-black"}`}>
                     {isTargeted ? "Tracking" : "Lock On"}
                   </button>
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-400">
-                  <span>Distance:</span>
-                  <span className="text-white font-bold">{(distances[star.id] || 0).toFixed(4)} LY</span>
+                  <span>Target Distance:</span>
+                  <span className="text-white font-bold">{Math.hypot(star.x - engineState.current.ship.x, star.y - engineState.current.ship.y, star.z - engineState.current.ship.z).toFixed(4)} LY</span>
                 </div>
               </div>
             );
@@ -298,15 +377,9 @@ export default function DeepSpaceEngine() {
         </div>
       </aside>
 
-      {/* BOTTOM PANEL: FLIGHT CONTROLS & RELATIVITY */}
-      <footer className="absolute bottom-6 left-6 w-[500px] bg-black/80 backdrop-blur-3xl border border-white/10 p-6 rounded-xl pointer-events-auto shadow-2xl z-10">
+      {/* BOTTOM PANEL: FLIGHT CONTROLS */}
+      <footer className="absolute bottom-6 left-6 w-[550px] bg-black/80 backdrop-blur-3xl border border-white/10 p-6 rounded-xl pointer-events-auto shadow-2xl z-10">
         
-        {isNavLocked && (
-           <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-500 text-black text-[9px] font-bold px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">
-             Autopilot Engaged
-           </div>
-        )}
-
         <div className="grid grid-cols-2 gap-8 mb-6">
           <div className="flex flex-col gap-2">
             <div className="flex justify-between">
@@ -325,10 +398,14 @@ export default function DeepSpaceEngine() {
           </div>
         </div>
 
-        <div className="border-t border-white/10 pt-4 grid grid-cols-3 gap-2 text-center">
+        <div className="border-t border-white/10 pt-4 grid grid-cols-4 gap-2 text-center">
           <div>
              <p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Lorentz (γ)</p>
              <p className="text-sm font-bold text-white">{telemetry.gamma.toFixed(2)}</p>
+          </div>
+          <div>
+             <p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Contracted Dist</p>
+             <p className="text-sm font-bold text-emerald-400">{telemetry.contractedDist.toFixed(3)} LY</p>
           </div>
           <div>
              <p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Ship Time</p>
