@@ -63,7 +63,7 @@ export default function DeepSpaceEngine() {
       const name = xml.querySelector("oname")?.textContent || searchQuery;
       
       const newStar: StarData = {
-        id: `API-${Date.now()}`, name, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        id: `API-${Date.now()}`, name, class: "API Class Unknown", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
       
@@ -127,18 +127,27 @@ export default function DeepSpaceEngine() {
       st.clocks.universe += dYrs; st.clocks.ship += dYrs / gamma;
       
       let v = refs.vel, distToTgt = Math.hypot(refs.tgt.x - st.ship.x, refs.tgt.y - st.ship.y, refs.tgt.z - st.ship.z);
-      if (refs.lock && v > 0 && v * dYrs > distToTgt - 0.05) { v = 0; setVelocityC(0); }
+      let moveDist = v * dYrs;
+
+      // FIXED AUTO-BRAKE LOGIC
+      if (refs.lock && v > 0) {
+         if (moveDist >= distToTgt - 0.05) {
+             moveDist = Math.max(0, distToTgt - 0.05); // Snap cleanly to the arrival orbit
+             v = 0; 
+             setVelocityC(0);
+             setTimeExp(0);
+         }
+      }
       
-      if (v > 0) {
-        st.ship.x += Math.sin(st.camera.yaw) * Math.cos(st.camera.pitch) * (v * dYrs);
-        st.ship.y += Math.sin(st.camera.pitch) * (v * dYrs);
-        st.ship.z += Math.cos(st.camera.yaw) * Math.cos(st.camera.pitch) * (v * dYrs);
+      if (moveDist > 0) {
+        st.ship.x += Math.sin(st.camera.yaw) * Math.cos(st.camera.pitch) * moveDist;
+        st.ship.y += Math.sin(st.camera.pitch) * moveDist;
+        st.ship.z += Math.cos(st.camera.yaw) * Math.cos(st.camera.pitch) * moveDist;
       }
 
       let etaYears = -1;
       if (refs.lock && v > 0) etaYears = (distToTgt / gamma) / v;
 
-      // SYNC ALL DISTANCES FOR REACT UI
       if (Math.random() < 0.1) {
         const liveDistances: Record<string, number> = {};
         refs.stars.forEach(s => {
@@ -148,21 +157,28 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears });
       }
 
+      // FIXED BACKGROUND DUST (Visible at rest)
+      ctx.lineCap = "round";
       ctx.beginPath();
       bgDust.current.forEach(d => {
         let dx = d.x - st.ship.x, dy = d.y - st.ship.y, dz = d.z - st.ship.z;
         if (dx > 50) d.x -= 100; if (dx < -50) d.x += 100;
         if (dy > 50) d.y -= 100; if (dy < -50) d.y += 100;
         if (dz > 50) d.z -= 100; if (dz < -50) d.z += 100;
-        const p1 = project(d.x, d.y, d.z, v), p2 = project(d.x + Math.sin(st.camera.yaw)*Math.cos(st.camera.pitch)*v*2, d.y + Math.sin(st.camera.pitch)*v*2, d.z + Math.cos(st.camera.yaw)*Math.cos(st.camera.pitch)*v*2, v);
+        const p1 = project(d.x, d.y, d.z, v);
+        // Force a tiny artificial tail so the dot mathematically draws even when v is 0
+        const tailDist = Math.max(0.005, v * 2);
+        const p2 = project(d.x + Math.sin(st.camera.yaw)*Math.cos(st.camera.pitch)*tailDist, d.y + Math.sin(st.camera.pitch)*tailDist, d.z + Math.cos(st.camera.yaw)*Math.cos(st.camera.pitch)*tailDist, v);
         if (p1 && p2) { ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); }
       });
-      ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.2})`; ctx.lineWidth = v > 0.1 ? 2 : 1; ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.5})`; ctx.lineWidth = v > 0.1 ? 2 : 1.5; ctx.stroke();
 
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          const cr = Math.max(1, Math.min(w * 0.4, (s.radius * 0.0005) * p.scale)), gr = Math.max(2, cr * 3);
+          // FIXED STAR SIZE LOGIC (Increased 0.0005 to 0.015 multiplier)
+          const cr = Math.max(1.5, Math.min(w * 0.4, (s.radius * 0.015) * p.scale)), gr = Math.max(2, cr * 3);
+          
           if (p.dist > 0.0001) {
              const g = ctx.createRadialGradient(p.sx, p.sy, cr, p.sx, p.sy, gr);
              g.addColorStop(0, `${s.color}90`); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -184,7 +200,7 @@ export default function DeepSpaceEngine() {
       reqId = requestAnimationFrame(animate);
     };
 
-    reqId = requestAnimationFrame(animate);
+    reqId = requestAnimationFrame(performance.now);
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
   }, []);
@@ -198,7 +214,7 @@ export default function DeepSpaceEngine() {
          <button onClick={resetEngine} className="bg-red-900/50 hover:bg-red-600 border border-red-500/50 text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all">Reset Origin</button>
       </header>
 
-      {isNavLocked && telemetry.contractedDist < 0.1 && velocityC === 0 && (
+      {isNavLocked && telemetry.contractedDist <= 0.051 && velocityC === 0 && (
          <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 bg-black/80 backdrop-blur-xl border border-cyan-500 p-6 rounded-lg shadow-[0_0_50px_rgba(34,211,238,0.2)] animate-pulse z-20">
              <h3 className="text-cyan-400 font-bold text-lg mb-1 uppercase">Stellar Scan Complete</h3>
              <h1 className="text-3xl font-black text-white mb-4">{targetStar.name}</h1>
@@ -235,7 +251,6 @@ export default function DeepSpaceEngine() {
         <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
           {knownStars.map(star => {
             const isTgt = targetStar.id === star.id && isNavLocked;
-            // DYNAMIC UI DISTANCE UPDATE APPLIED HERE
             const activeDistance = distances[star.id] !== undefined ? distances[star.id] : star.distanceLY;
             
             return (
