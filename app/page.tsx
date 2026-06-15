@@ -18,6 +18,7 @@ export default function DeepSpaceEngine() {
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: 0, etaYears: -1 });
+  const [distances, setDistances] = useState<Record<string, number>>({});
   const [knownStars, setKnownStars] = useState<StarData[]>(CORE_STARS);
   const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]);
   const [isNavLocked, setIsNavLocked] = useState(false);
@@ -37,7 +38,6 @@ export default function DeepSpaceEngine() {
     x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200, alpha: Math.random() * 0.8 + 0.2
   })));
 
-  // --- NEW UNBREAKABLE XML SESAME API UPLINK ---
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -48,7 +48,6 @@ export default function DeepSpaceEngine() {
       const localMatch = CORE_STARS.find(s => s.name.toLowerCase().includes(sq));
       if (localMatch) { setTargetStar(localMatch); setIsNavLocked(true); setIsSearching(false); setSearchQuery(""); return; }
 
-      // Fetch from the robust Strasbourg Sesame XML endpoint
       const res = await fetch(`https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV?${encodeURIComponent(searchQuery)}`);
       const xmlText = await res.text();
       const parser = new DOMParser();
@@ -111,7 +110,6 @@ export default function DeepSpaceEngine() {
       const st = engineState.current, refs = stateRefs.current;
       if (!st.lastFrameTime) st.lastFrameTime = timeNow;
       
-      // TRUE REAL-TIME CALCULATION
       const dRealSec = (timeNow - st.lastFrameTime) / 1000; 
       st.lastFrameTime = timeNow;
       const dYrs = (dRealSec * Math.pow(10, refs.timeExp)) / SECONDS_PER_YEAR;
@@ -139,7 +137,16 @@ export default function DeepSpaceEngine() {
 
       let etaYears = -1;
       if (refs.lock && v > 0) etaYears = (distToTgt / gamma) / v;
-      if (Math.random() < 0.1) setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears });
+
+      // SYNC ALL DISTANCES FOR REACT UI
+      if (Math.random() < 0.1) {
+        const liveDistances: Record<string, number> = {};
+        refs.stars.forEach(s => {
+           liveDistances[s.id] = Math.hypot(s.x - st.ship.x, s.y - st.ship.y, s.z - st.ship.z);
+        });
+        setDistances(liveDistances);
+        setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears });
+      }
 
       ctx.beginPath();
       bgDust.current.forEach(d => {
@@ -228,13 +235,16 @@ export default function DeepSpaceEngine() {
         <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
           {knownStars.map(star => {
             const isTgt = targetStar.id === star.id && isNavLocked;
+            // DYNAMIC UI DISTANCE UPDATE APPLIED HERE
+            const activeDistance = distances[star.id] !== undefined ? distances[star.id] : star.distanceLY;
+            
             return (
               <div key={star.id} className={`p-2 rounded flex flex-col border ${isTgt ? "bg-cyan-950/40 border-cyan-500" : "bg-white/5 border-white/5"}`}>
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-xs font-bold flex items-center gap-2">{star.name} {star.isCustom && <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1 rounded uppercase border border-indigo-500/30">API</span>}</span>
                   <button onClick={() => { setTargetStar(star); setIsNavLocked(true); }} className={`text-[9px] px-2 py-0.5 rounded uppercase ${isTgt ? "bg-cyan-500 text-black font-bold" : "bg-cyan-900/50 text-cyan-300"}`}>{isTgt ? "Tracking" : "Lock On"}</button>
                 </div>
-                <div className="flex justify-between text-[10px] text-neutral-400"><span>Target Dist:</span><span className="text-white font-bold">{Math.hypot(star.x - engineState.current.ship.x, star.y - engineState.current.ship.y, star.z - engineState.current.ship.z).toFixed(4)} LY</span></div>
+                <div className="flex justify-between text-[10px] text-neutral-400"><span>Target Dist:</span><span className="text-white font-bold">{activeDistance.toFixed(4)} LY</span></div>
               </div>
             );
           })}
@@ -266,6 +276,3 @@ export default function DeepSpaceEngine() {
     </main>
   );
 }
-
-
-
