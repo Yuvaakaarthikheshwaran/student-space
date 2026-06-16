@@ -54,6 +54,60 @@ const StarMesh = ({ star }: { star: StarData }) => {
   );
 };
 
+// --- DYNAMIC RELATIVISTIC DUST ---
+const RelativisticDust = ({ velocityC }: { velocityC: number }) => {
+  const dustRef = useRef<THREE.Points>(null);
+  const { camera } = useThree();
+  
+  const particleCount = 2000;
+  const positions = useMemo(() => {
+    const pos = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 40;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 40;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 40;
+    }
+    return pos;
+  }, []);
+
+  useFrame((state, delta) => {
+    if (!dustRef.current || velocityC <= 0) return;
+    const positions = dustRef.current.geometry.attributes.position.array as Float32Array;
+    
+    // Move dust opposite to camera facing
+    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const speed = velocityC * delta * 50; 
+    
+    for (let i = 0; i < particleCount; i++) {
+      const p = new THREE.Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      p.addScaledVector(camDir, -speed);
+      
+      // Wrap dust around camera if it falls behind
+      if (p.distanceTo(camera.position) > 25) {
+         const newPos = camera.position.clone().addScaledVector(camDir, 20);
+         newPos.x += (Math.random() - 0.5) * 20;
+         newPos.y += (Math.random() - 0.5) * 20;
+         newPos.z += (Math.random() - 0.5) * 20;
+         p.copy(newPos);
+      }
+      
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
+    }
+    dustRef.current.geometry.attributes.position.needsUpdate = true;
+  });
+
+  return (
+    <points ref={dustRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial color="#ffffff" size={0.05} transparent opacity={velocityC > 0.1 ? 0.8 : 0.3} sizeAttenuation={true} />
+    </points>
+  );
+};
+
 // --- 3D RELATIVISTIC NAV-COMPUTER COMPONENT ---
 const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeExp, setTelemetry, setDistances, knownStars }: any) => {
   const { camera } = useThree();
@@ -109,7 +163,6 @@ const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeE
 
   return null;
 };
-
 // --- REACT UI OVERLAY ---
 export default function DeepSpaceEngine() {
   const [hasStarted, setHasStarted] = useState(false);
@@ -160,6 +213,9 @@ export default function DeepSpaceEngine() {
                 <p className="text-neutral-400 mb-4 text-sm leading-relaxed">
                    <strong className="text-cyan-400">UPGRADE ACTIVE:</strong> You have crossed into dedicated GPU rendering. Stars are now true 3D spherical meshes. The background skybox spans an infinite volumetric domain.
                 </p>
+                <p className="text-neutral-400 text-sm leading-relaxed">
+                   <strong className="text-red-400">WARNING:</strong> At 99% the speed of light, you won't need a diet. Lorentz contraction will make your ship appear incredibly thin to the rest of the universe. Proceed at your own existential risk.
+                </p>
             </div>
             <button onClick={() => setHasStarted(true)} className="bg-cyan-600 hover:bg-cyan-400 text-black px-12 py-4 rounded-lg font-black uppercase tracking-widest transition-all hover:shadow-[0_0_30px_rgba(34,211,238,0.4)]">Ignite 3D Engine</button>
          </div>
@@ -176,12 +232,15 @@ export default function DeepSpaceEngine() {
           <color attach="background" args={['#010101']} />
           <ambientLight intensity={0.2} />
           
-          {/* Deep Space Background Skybox */}
+          {/* Layer 1: Deep Space Background Skybox (Static at infinity) */}
           <Stars radius={500} depth={50} count={15000} factor={4} saturation={0} fade speed={1} />
           
-          {/* Render all known stars as physical 3D objects */}
+          {/* Layer 2: Known Stars (3D Meshes) */}
           {knownStars.map(star => <StarMesh key={star.id} star={star} />)}
           
+          {/* Layer 3: Relativistic Dust */}
+          <RelativisticDust velocityC={velocityC} />
+
           <ShipController targetStar={targetStar} velocityC={velocityC} timeExp={timeExp} setVelocityC={setVelocityC} setTimeExp={setTimeExp} setTelemetry={setTelemetry} setDistances={setDistances} knownStars={knownStars} />
         </Canvas>
       </div>
