@@ -3,20 +3,39 @@ import React, { useEffect, useRef, useState } from "react";
 
 type StarData = { id: string; name: string; x: number; y: number; z: number; color: string; radius: number; distanceLY: number; class: string; temp?: number; mass?: number; isCustom?: boolean };
 
+// EXPANDED CATALOG: 25 Famous Stars
 const CORE_STARS: StarData[] = [
-  { id: "SOL", name: "Sun (Sol)", class: "G2V Dwarf", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1, distanceLY: 0, temp: 5778, mass: 1 },
-  { id: "CEN", name: "Alpha Centauri", class: "G2V/K1V", x: 4.37, y: 0, z: 0, color: "#fde047", radius: 1.1, distanceLY: 4.37, temp: 5790, mass: 1.1 },
-  { id: "SIR", name: "Sirius A", class: "A1V", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.71, distanceLY: 8.6, temp: 9940, mass: 2.02 },
+  { id: "SOL", name: "Sun", class: "G2V", x: 0, y: 0, z: 0, color: "#fef08a", radius: 1, distanceLY: 0, temp: 5778, mass: 1 },
+  { id: "CEN", name: "Alpha Centauri", class: "G2V", x: 4.37, y: 0, z: 0, color: "#fde047", radius: 1.1, distanceLY: 4.37, temp: 5790, mass: 1.1 },
+  { id: "SIR", name: "Sirius", class: "A1V", x: -2.0, y: -8.0, z: -2.5, color: "#cffafe", radius: 1.71, distanceLY: 8.6, temp: 9940, mass: 2.02 },
+  { id: "ERI", name: "Epsilon Eridani", class: "K2V", x: -5.0, y: -8.0, z: 5.0, color: "#fdba74", radius: 0.73, distanceLY: 10.5, temp: 5084, mass: 0.82 },
+  { id: "PRO", name: "Procyon", class: "F5IV", x: -4.0, y: -10.0, z: 1.0, color: "#fef08a", radius: 2.04, distanceLY: 11.4, temp: 6530, mass: 1.49 },
+  { id: "TAU", name: "Tau Ceti", class: "G8V", x: -11.0, y: 0.0, z: -4.0, color: "#fde047", radius: 0.79, distanceLY: 11.9, temp: 5344, mass: 0.78 },
+  { id: "ALT", name: "Altair", class: "A7V", x: 12.0, y: 5.0, z: 8.0, color: "#a5f3fc", radius: 1.63, distanceLY: 16.7, temp: 7550, mass: 1.79 },
+  { id: "FOM", name: "Fomalhaut", class: "A3V", x: 10.0, y: -18.0, z: 10.0, color: "#cffafe", radius: 1.84, distanceLY: 25.1, temp: 8590, mass: 1.92 },
   { id: "VEG", name: "Vega", class: "A0V", x: 15.0, y: 15.0, z: -10.0, color: "#67e8f9", radius: 2.36, distanceLY: 25.0, temp: 9602, mass: 2.13 },
-  { id: "BET", name: "Betelgeuse", class: "M1-2 Supergiant", x: -400.0, y: -100.0, z: 300.0, color: "#dc2626", radius: 887.0, distanceLY: 548.0, temp: 3600, mass: 16.5 }
+  { id: "ARC", name: "Arcturus", class: "K0III", x: 5.0, y: 30.0, z: 20.0, color: "#fb923c", radius: 25.4, distanceLY: 36.7, temp: 4286, mass: 1.08 },
+  { id: "CAP", name: "Capella", class: "G3III", x: -20.0, y: 35.0, z: -15.0, color: "#fde047", radius: 11.9, distanceLY: 42.9, temp: 4970, mass: 2.56 },
+  { id: "ALD", name: "Aldebaran", class: "K5III", x: -40.0, y: 20.0, z: 45.0, color: "#f97316", radius: 44.1, distanceLY: 65.3, temp: 3910, mass: 1.16 },
+  { id: "REG", name: "Regulus", class: "B8Ia", x: -600.0, y: -100.0, z: 400.0, color: "#3b82f6", radius: 78.9, distanceLY: 860.0, temp: 12100, mass: 21 },
+  { id: "BET", name: "Betelgeuse", class: "M1-2I", x: -400.0, y: -100.0, z: 300.0, color: "#dc2626", radius: 887.0, distanceLY: 548.0, temp: 3600, mass: 16.5 },
+  { id: "POL", name: "Polaris", class: "F7Ib", x: 0.0, y: 433.0, z: 0.0, color: "#fef08a", radius: 37.5, distanceLY: 433.0, temp: 6015, mass: 5.4 },
+  { id: "ANT", name: "Antares", class: "M1.5I", x: 200.0, y: -300.0, z: -400.0, color: "#ef4444", radius: 680.0, distanceLY: 550.0, temp: 3500, mass: 12.0 },
+  { id: "SPI", name: "Spica", class: "B1IV", x: 100.0, y: -150.0, z: 200.0, color: "#60a5fa", radius: 7.4, distanceLY: 250.0, temp: 22400, mass: 11.43 },
+  { id: "DEN", name: "Deneb", class: "A2Ia", x: 1500.0, y: 1500.0, z: -1000.0, color: "#e0f2fe", radius: 203.0, distanceLY: 2615.0, temp: 8525, mass: 19.0 },
+  { id: "RGL", name: "Rigel Kentaurus", class: "G2V", x: 4.37, y: 0.1, z: 0.1, color: "#fef08a", radius: 1.2, distanceLY: 4.37, temp: 5790, mass: 1.1 },
+  { id: "ACR", name: "Acrux", class: "G2V", x: 200.0, y: -100.0, z: -200.0, color: "#67e8f9", radius: 1.3, distanceLY: 320.0, temp: 28000, mass: 14.0 },
+  { id: "BCE", name: "Beta Centauri", class: "B1III", x: 250.0, y: -120.0, z: -220.0, color: "#3b82f6", radius: 8.0, distanceLY: 390.0, temp: 25000, mass: 10.7 },
+  { id: "ALN", name: "Alnilam", class: "B0Ia", x: -800.0, y: -300.0, z: 800.0, color: "#2563eb", radius: 32.4, distanceLY: 2000.0, temp: 27500, mass: 34.6 },
+  { id: "CAS", name: "Castor", class: "G5III", x: -30.0, y: 40.0, z: -20.0, color: "#fde047", radius: 12.0, distanceLY: 51.6, temp: 4930, mass: 2.6 },
+  { id: "POLU", name: "Pollux", class: "K0III", x: -25.0, y: 25.0, z: -10.0, color: "#fb923c", radius: 8.8, distanceLY: 33.7, temp: 4666, mass: 2.04 },
+  { id: "BELL", name: "Bellatrix", class: "B2III", x: -100.0, y: -50.0, z: 200.0, color: "#60a5fa", radius: 5.7, distanceLY: 250.0, temp: 22000, mass: 8.6 }
 ];
 
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  // NEW: Pre-flight launch sequence state
   const [hasStarted, setHasStarted] = useState(false);
-  
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
   const [telemetry, setTelemetry] = useState({ gamma: 1, universeYears: 0, shipYears: 0, contractedDist: Infinity, etaYears: -1 });
@@ -36,22 +55,16 @@ export default function DeepSpaceEngine() {
     mouse: { isDown: false, lastX: 0, lastY: 0 }, clocks: { universe: 0, ship: 0 }, lastFrameTime: 0
   });
 
-  // LAYER 1: Local Relativistic Dust (5,000 particles)
-  const bgDust = useRef(Array.from({ length: 5000 }, () => ({
-    x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200
-  })));
-
-  // LAYER 2: Distant Static Milky Way (15,000 stars at Infinity)
-  const staticStars = useRef(Array.from({ length: 15000 }, () => {
-    const theta = Math.random() * 2 * Math.PI;
-    const phi = Math.acos(2 * Math.random() - 1);
-    return {
-      x: 1000 * Math.sin(phi) * Math.cos(theta),
-      y: 1000 * Math.sin(phi) * Math.sin(theta),
-      z: 1000 * Math.cos(phi),
-      alpha: Math.random() * 0.5 + 0.1
-    };
+  // SKYBOX: 15,000 Distant Stars (Pasted to background)
+  const skybox = useRef(Array.from({ length: 15000 }, () => {
+    const theta = Math.random() * 2 * Math.PI, phi = Math.acos(2 * Math.random() - 1);
+    return { x: Math.sin(phi) * Math.cos(theta), y: Math.sin(phi) * Math.sin(theta), z: Math.cos(phi), a: Math.random() * 0.8 + 0.2 };
   }));
+
+  // DUST: 5,000 Local Particles (Motion blur)
+  const bgDust = useRef(Array.from({ length: 5000 }, () => ({
+    x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, z: (Math.random() - 0.5) * 200, a: Math.random() * 0.8 + 0.2
+  })));
 
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,20 +72,20 @@ export default function DeepSpaceEngine() {
     setIsSearching(true); setSearchError("");
     try {
       const sq = searchQuery.trim().toLowerCase();
-      const localMatch = CORE_STARS.find(s => s.name.toLowerCase().includes(sq));
+      const localMatch = knownStars.find(s => s.name.toLowerCase().includes(sq));
       if (localMatch) { setTargetStar(localMatch); setIsNavLocked(true); setIsSearching(false); setSearchQuery(""); return; }
 
       const res = await fetch(`https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV?${encodeURIComponent(searchQuery)}`);
-      const xmlText = await res.text();
-      const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+      const xml = new DOMParser().parseFromString(await res.text(), "text/xml");
       if (!xml.querySelector("plx")) throw new Error("Parallax not found.");
 
-      const distLY = (1000 / parseFloat(xml.querySelector("plx")!.textContent || "0")) * 3.26156;
+      const plx = parseFloat(xml.querySelector("plx")!.textContent || "0");
+      const distLY = (1000 / plx) * 3.26156;
       const raRad = parseFloat(xml.querySelector("jradeg")?.textContent || "0") * (Math.PI / 180);
       const decRad = parseFloat(xml.querySelector("jdedeg")?.textContent || "0") * (Math.PI / 180);
       
       const newStar: StarData = {
-        id: `API-${Date.now()}`, name: xml.querySelector("oname")?.textContent || searchQuery, class: "API Discovered", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
+        id: `API-${Date.now()}`, name: xml.querySelector("oname")?.textContent || searchQuery, class: "API Target", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
       setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setIsNavLocked(true); setSearchQuery("");
@@ -100,22 +113,20 @@ export default function DeepSpaceEngine() {
   };
 
   useEffect(() => {
-    if (!hasStarted) return; // Halt physics until user clicks Launch
-
+    if (!hasStarted) return;
     const ctx = canvasRef.current?.getContext("2d", { alpha: false });
     if (!ctx || !canvasRef.current) return;
     let w = canvasRef.current.width = window.innerWidth, h = canvasRef.current.height = window.innerHeight, reqId: number;
 
-    const project = (x: number, y: number, z: number, v_c: number, isStatic = false) => {
+    const project = (x: number, y: number, z: number, v_c: number, isSkybox = false) => {
       const st = engineState.current;
-      // Static stars ignore ship position to stay at infinity
-      let dx = isStatic ? x : x - st.ship.x, dy = isStatic ? y : y - st.ship.y, dz = isStatic ? z : z - st.ship.z;
+      let dx = isSkybox ? x : x - st.ship.x, dy = isSkybox ? y : y - st.ship.y, dz = isSkybox ? z : z - st.ship.z;
       let tx = dx * Math.cos(st.camera.yaw) - dz * Math.sin(st.camera.yaw);
       let tz = dx * Math.sin(st.camera.yaw) + dz * Math.cos(st.camera.yaw);
       let ty = dy * Math.cos(st.camera.pitch) - tz * Math.sin(st.camera.pitch);
       let fz = dy * Math.sin(st.camera.pitch) + tz * Math.cos(st.camera.pitch);
       if (fz < 0.000001) return null;
-      const fov = isStatic ? 1 : (1 - v_c * 0.2); 
+      const fov = isSkybox ? 1 : (1 - v_c * 0.2); 
       return { sx: w/2 + tx * ((w/2) / fz * fov), sy: h/2 + ty * ((w/2) / fz * fov), scale: (w/2) / fz * fov, dist: fz };
     };
 
@@ -159,14 +170,15 @@ export default function DeepSpaceEngine() {
         setTelemetry({ gamma, universeYears: st.clocks.universe, shipYears: st.clocks.ship, contractedDist: distToTgt / gamma, etaYears: (refs.lock && v > 0) ? (distToTgt / gamma) / v : -1 });
       }
 
-      // RENDER LAYER 1: 15,000 Static Distant Stars
+      // RENDER LAYER 1: 15,000 Skybox Stars
       ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      staticStars.current.forEach(s => {
+      skybox.current.forEach(s => {
          const p = project(s.x, s.y, s.z, v, true);
-         if (p) ctx.fillRect(p.sx, p.sy, 1, 1);
+         if (p) { ctx.globalAlpha = s.a; ctx.fillRect(p.sx, p.sy, 1.2, 1.2); }
       });
+      ctx.globalAlpha = 1.0;
 
-      // RENDER LAYER 2: 5,000 Relativistic Local Dust Particles
+      // RENDER LAYER 2: 5,000 Relativistic Dust Particles
       ctx.lineCap = "round"; ctx.beginPath();
       bgDust.current.forEach(d => {
         let dx = d.x - st.ship.x, dy = d.y - st.ship.y, dz = d.z - st.ship.z;
@@ -180,12 +192,12 @@ export default function DeepSpaceEngine() {
       });
       ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.4})`; ctx.lineWidth = v > 0.1 ? 2 : 1.5; ctx.stroke();
 
-      // RENDER LAYER 3: Targetable Star Systems
+      // RENDER LAYER 3: Known Stars
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
           const bloom = p.dist < 0.5 ? Math.pow(0.5 / Math.max(0.0001, p.dist), 2) : 0;
-          const cr = Math.max(1.2, Math.min(w * 0.4, s.radius * bloom));
+          const cr = Math.max(1.5, Math.min(w * 0.4, s.radius * bloom));
           const gr = p.dist < 0.5 ? cr * 3 : 2; 
 
           if (p.dist > 0.0001) {
@@ -200,6 +212,9 @@ export default function DeepSpaceEngine() {
           }
           if (isTgt && refs.lock) {
             ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(p.sx, p.sy, gr + 15, 0, 6.28); ctx.stroke();
+            const gR = gr; ctx.beginPath();
+            ctx.moveTo(p.sx, p.sy - gR - 20); ctx.lineTo(p.sx, p.sy - gR - 10); ctx.moveTo(p.sx, p.sy + gR + 20); ctx.lineTo(p.sx, p.sy + gR + 10);
+            ctx.moveTo(p.sx - gR - 20, p.sy); ctx.lineTo(p.sx - gR - 10, p.sy); ctx.moveTo(p.sx + gR + 20, p.sy); ctx.lineTo(p.sx + gR + 10, p.sy); ctx.stroke();
           }
         }
       });
@@ -210,8 +225,6 @@ export default function DeepSpaceEngine() {
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
   }, [hasStarted]);
-
-  // LAUNCH SCREEN RENDERER
   if (!hasStarted) {
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-[#020202] text-white font-mono selection:bg-cyan-900 relative overflow-hidden">
@@ -240,7 +253,6 @@ export default function DeepSpaceEngine() {
     );
   }
 
-  // MAIN SIMULATOR RENDERER
   return (
     <main className={`relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden ${isNavLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`} onMouseDown={handleMouse.down} onMouseUp={handleMouse.up} onMouseLeave={handleMouse.up} onMouseMove={handleMouse.move}>
       <canvas ref={canvasRef} className="absolute inset-0 z-0 touch-none block" />
