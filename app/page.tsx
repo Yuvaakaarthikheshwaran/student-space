@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -22,6 +22,7 @@ const CORE_STARS: StarData[] = [
 
 const SECONDS_PER_YEAR = 31557600;
 
+// --- 3D COMPONENTS ---
 const StarMesh = ({ star }: { star: StarData }) => {
   const radius = Math.max(0.02, star.radius * 0.015);
   return (
@@ -74,11 +75,35 @@ const RelativisticDust = ({ velocityC }: { velocityC: number }) => {
   );
 };
 
-const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeExp, knownStars, setArrivalScan }: any) => {
-  const { camera } = useThree();
+const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeExp, knownStars, setArrivalScan, isNavLocked }: any) => {
+  const { camera, gl } = useThree();
   const targetVec = useMemo(() => new THREE.Vector3(targetStar.x, targetStar.y, targetStar.z), [targetStar]);
   const lastTime = useRef(performance.now());
   const clocks = useRef({ universe: 0, ship: 0 });
+
+  // Custom pointer drag logic when unlocked
+  const dragState = useRef({ isDown: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0 });
+
+  useEffect(() => {
+    const dom = gl.domElement;
+    const onDown = (e: PointerEvent) => { dragState.current.isDown = true; dragState.current.lastX = e.clientX; dragState.current.lastY = e.clientY; };
+    const onUp = () => { dragState.current.isDown = false; };
+    const onMove = (e: PointerEvent) => {
+      if (!dragState.current.isDown || isNavLocked) return;
+      dragState.current.yaw -= (e.clientX - dragState.current.lastX) * 0.003;
+      dragState.current.pitch -= (e.clientY - dragState.current.lastY) * 0.003;
+      dragState.current.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, dragState.current.pitch));
+      dragState.current.lastX = e.clientX; dragState.current.lastY = e.clientY;
+      
+      const euler = new THREE.Euler(dragState.current.pitch, dragState.current.yaw, 0, 'YXZ');
+      camera.quaternion.setFromEuler(euler);
+    };
+    
+    dom.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointermove', onMove);
+    return () => { dom.removeEventListener('pointerdown', onDown); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointermove', onMove); };
+  }, [isNavLocked, camera, gl.domElement]);
 
   useFrame(() => {
     const now = performance.now();
@@ -91,6 +116,7 @@ const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeE
     let v = velocityC;
     let moveDist = v * dYrs;
 
+    // Cinematic Auto-Brake
     if (v > 0 && moveDist >= dist - 0.05) {
       moveDist = Math.max(0, dist - 0.05);
       v = 0;
@@ -101,16 +127,26 @@ const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeE
       setArrivalScan(false);
     }
 
+    // Move camera forward in the direction it's currently facing
     if (moveDist > 0) {
-      const dir = new THREE.Vector3().subVectors(targetVec, camera.position).normalize();
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
       camera.position.addScaledVector(dir, moveDist);
     }
 
-    const currentQuat = camera.quaternion.clone();
-    camera.lookAt(targetVec);
-    camera.quaternion.copy(currentQuat).slerp(camera.quaternion.clone(), 0.05);
+    // Smooth auto-steer towards target ONLY if Nav-Lock is active
+    if (isNavLocked) {
+      const currentQuat = camera.quaternion.clone();
+      camera.lookAt(targetVec);
+      const targetQuat = camera.quaternion.clone();
+      camera.quaternion.copy(currentQuat).slerp(targetQuat, 0.05);
 
-    // DIRECT DOM MANIPULATION
+      // Sync internal manual drag state so it doesn't snap if unlocked
+      const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      dragState.current.yaw = euler.y;
+      dragState.current.pitch = euler.x;
+    }
+
+    // DIRECT DOM MANIPULATION FOR HIGH-FPS HUD
     const gamma = 1 / Math.sqrt(1 - Math.pow(v, 2));
     clocks.current.universe += dYrs;
     clocks.current.ship += dYrs / gamma;
@@ -142,15 +178,17 @@ const ShipController = ({ targetStar, velocityC, timeExp, setVelocityC, setTimeE
   return null;
 };
 
+// --- REACT UI OVERLAY ---
 export default function DeepSpaceEngine() {
   const [hasStarted, setHasStarted] = useState(false);
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
   const [knownStars, setKnownStars] = useState<StarData[]>(CORE_STARS);
-  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]); // Default to Alpha Centauri
+  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [arrivalScan, setArrivalScan] = useState(false);
+  const [isNavLocked, setIsNavLocked] = useState(true);
 
   const searchSimbadAPI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +197,7 @@ export default function DeepSpaceEngine() {
     try {
       const sq = searchQuery.trim().toLowerCase();
       const localMatch = knownStars.find(s => s.name.toLowerCase().includes(sq));
-      if (localMatch) { setTargetStar(localMatch); setIsSearching(false); setSearchQuery(""); return; }
+      if (localMatch) { setTargetStar(localMatch); setIsNavLocked(true); setIsSearching(false); setSearchQuery(""); return; }
 
       const res = await fetch(`https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV?${encodeURIComponent(searchQuery)}`);
       const xml = new DOMParser().parseFromString(await res.text(), "text/xml");
@@ -174,7 +212,7 @@ export default function DeepSpaceEngine() {
         id: `API-${Date.now()}`, name: xml.querySelector("oname")?.textContent || searchQuery.toUpperCase(), class: "API Target", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
-      setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setSearchQuery("");
+      setKnownStars(p => [...p, newStar]); setTargetStar(newStar); setIsNavLocked(true); setSearchQuery("");
     } catch (err: any) { alert(err.message || "Uplink Failed"); } finally { setIsSearching(false); }
   };
 
@@ -186,7 +224,7 @@ export default function DeepSpaceEngine() {
             <p className="text-cyan-500 font-bold tracking-[0.3em] uppercase text-xs mb-4 animate-pulse">GPU WebGL Initialized</p>
             <h1 className="text-5xl font-black mb-6 tracking-tight text-white drop-shadow-lg">R3F Spatial Engine</h1>
             <div className="bg-white/5 border border-white/10 p-6 rounded-2xl mb-8 text-left backdrop-blur-md shadow-2xl">
-                <p className="text-neutral-300 mb-4 text-sm leading-relaxed"><strong className="text-cyan-400">UPGRADE ACTIVE:</strong> You have crossed into dedicated GPU rendering. Stars are now true 3D spherical meshes. The background skybox spans an infinite volumetric domain.</p>
+                <p className="text-neutral-300 mb-4 text-sm leading-relaxed"><strong className="text-cyan-400">UPGRADE ACTIVE:</strong> You are launching the WebGL GPU rendering engine coupled with the advanced Glassmorphic Tactical UI.</p>
             </div>
             <button onClick={() => setHasStarted(true)} className="bg-cyan-500 hover:bg-cyan-400 text-black px-12 py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(34,211,238,0.2)] hover:shadow-[0_0_40px_rgba(34,211,238,0.5)] transform hover:-translate-y-1">Ignite 3D Engine</button>
          </div>
@@ -197,7 +235,7 @@ export default function DeepSpaceEngine() {
   return (
     <main className="relative w-screen h-screen bg-[#020202] text-white font-mono overflow-hidden selection:bg-cyan-900">
       
-      {/* 3D CANVAS - FORCED TO 100% VIEWPORT TO FIX THE "TINY BOX" BUG */}
+      {/* 3D CANVAS - FULL VIEWPORT */}
       <div style={{ position: "absolute", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0 }}>
         <Canvas camera={{ position: [0, 1.5, 3], fov: 60 }}>
           <color attach="background" args={['#010101']} />
@@ -205,7 +243,7 @@ export default function DeepSpaceEngine() {
           <Stars radius={500} depth={50} count={15000} factor={4} saturation={0} fade speed={1} />
           {knownStars.map(star => <StarMesh key={star.id} star={star} />)}
           <RelativisticDust velocityC={velocityC} />
-          <ShipController targetStar={targetStar} velocityC={velocityC} timeExp={timeExp} setVelocityC={setVelocityC} setTimeExp={setTimeExp} knownStars={knownStars} setArrivalScan={setArrivalScan} />
+          <ShipController targetStar={targetStar} velocityC={velocityC} timeExp={timeExp} setVelocityC={setVelocityC} setTimeExp={setTimeExp} knownStars={knownStars} setArrivalScan={setArrivalScan} isNavLocked={isNavLocked} />
         </Canvas>
       </div>
 
@@ -238,8 +276,15 @@ export default function DeepSpaceEngine() {
       {/* TOP HEADER */}
       <header className="absolute top-6 left-6 z-20 pointer-events-none flex flex-col gap-2">
          <h1 className="text-white/80 font-black tracking-widest uppercase text-xl">Relativistic Engine</h1>
-         <div className="text-cyan-400/80 text-[10px] tracking-widest uppercase font-bold bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded-full w-fit">
-           Tracking: {targetStar.name}
+         <div className="flex gap-2 pointer-events-auto">
+           <button onClick={() => setIsNavLocked(!isNavLocked)} className={`text-[9px] px-3 py-1 rounded-full uppercase tracking-widest font-bold border transition-colors cursor-pointer ${isNavLocked ? "bg-cyan-950/40 border-cyan-500/30 text-cyan-400" : "bg-neutral-900 border-neutral-600 text-neutral-400"}`}>
+             {isNavLocked ? "Nav-Lock: ON" : "Nav-Lock: OFF"}
+           </button>
+           {isNavLocked && (
+             <div className="text-cyan-400/80 text-[10px] tracking-widest uppercase font-bold bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded-full w-fit">
+               Target: {targetStar.name}
+             </div>
+           )}
          </div>
       </header>
 
@@ -249,7 +294,7 @@ export default function DeepSpaceEngine() {
           <p className="text-[10px] text-cyan-400 uppercase tracking-widest mb-3 font-bold flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span> SIMBAD Uplink</p>
           <form onSubmit={searchSimbadAPI} className="flex gap-2">
             <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Query Star..." className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none transition-colors" />
-            <button type="submit" disabled={isSearching} className="bg-white/10 hover:bg-cyan-500 hover:text-black border border-white/10 hover:border-cyan-400 px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 text-white">{isSearching ? "..." : "SCAN"}</button>
+            <button type="submit" disabled={isSearching} className="bg-white/10 hover:bg-cyan-500 hover:text-black border border-white/10 hover:border-cyan-400 px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 text-white cursor-pointer">{isSearching ? "..." : "SCAN"}</button>
           </form>
         </div>
         
@@ -259,10 +304,10 @@ export default function DeepSpaceEngine() {
           {knownStars.map(star => {
             const isTgt = targetStar.id === star.id;
             return (
-              <div key={star.id} className={`p-3 rounded-xl flex flex-col border transition-all cursor-pointer ${isTgt ? "bg-cyan-950/40 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.1)]" : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20"}`} onClick={() => { setTargetStar(star); setArrivalScan(false); }}>
+              <div key={star.id} className={`p-3 rounded-xl flex flex-col border transition-all cursor-pointer ${isTgt && isNavLocked ? "bg-cyan-950/40 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.1)]" : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20"}`} onClick={() => { setTargetStar(star); setIsNavLocked(true); setArrivalScan(false); }}>
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-xs font-bold text-white flex items-center gap-2">{star.name} {star.isCustom && <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded uppercase border border-indigo-500/30">API</span>}</span>
-                  {isTgt && <span className="text-[8px] bg-cyan-500 text-black px-2 py-0.5 rounded font-bold uppercase tracking-widest">Locked</span>}
+                  {isTgt && isNavLocked && <span className="text-[8px] bg-cyan-500 text-black px-2 py-0.5 rounded font-bold uppercase tracking-widest">Locked</span>}
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-400"><span>Distance:</span><span id={`dist-${star.id}`} className="text-white font-medium">--- LY</span></div>
               </div>
@@ -276,22 +321,36 @@ export default function DeepSpaceEngine() {
         <div className="bg-black/40 backdrop-blur-xl border border-white/10 p-6 rounded-2xl shadow-2xl pointer-events-auto relative">
           
           <div className="grid grid-cols-2 gap-12 mb-6">
-            {/* Throttle */}
+            {/* Throttle with Presets */}
             <div className="flex flex-col gap-3">
               <div className="flex justify-between items-end">
                 <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Sub-light Throttle</span>
                 <span className="text-sm font-black text-cyan-400">{velocityC.toFixed(4)} c</span>
               </div>
               <input type="range" min="0" max="0.9999" step="0.0001" value={velocityC} onChange={(e) => setVelocityC(parseFloat(e.target.value))} className="w-full h-1.5 bg-white/10 rounded-full appearance-none accent-cyan-400 cursor-pointer outline-none hover:bg-white/20 transition-all" />
+              <div className="flex justify-between gap-2 mt-1">
+                {[0, 0.25, 0.5, 0.9, 0.9999].map(val => (
+                  <button key={val} onClick={() => setVelocityC(val)} className="flex-1 bg-white/5 hover:bg-cyan-500 hover:text-black border border-white/10 text-[9px] font-bold py-1 rounded transition-colors text-neutral-400 cursor-pointer">
+                    {val === 0 ? "STOP" : val === 0.9999 ? "MAX" : `${val}c`}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Time Warp */}
+            {/* Time Warp with Presets */}
             <div className="flex flex-col gap-3">
               <div className="flex justify-between items-end">
-                <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Time Warp Multiplier</span>
+                <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Time Warp</span>
                 <span className="text-sm font-black text-purple-400">{timeExp === 0 ? "1x (Real Time)" : `10^${timeExp.toFixed(1)}x`}</span>
               </div>
               <input type="range" min="0" max="10" step="0.1" value={timeExp} onChange={(e) => setTimeExp(parseFloat(e.target.value))} className="w-full h-1.5 bg-white/10 rounded-full appearance-none accent-purple-400 cursor-pointer outline-none hover:bg-white/20 transition-all" />
+              <div className="flex justify-between gap-2 mt-1">
+                {[0, 3, 6, 8, 10].map(val => (
+                  <button key={val} onClick={() => setTimeExp(val)} className="flex-1 bg-white/5 hover:bg-purple-500 hover:text-black border border-white/10 text-[9px] font-bold py-1 rounded transition-colors text-neutral-400 cursor-pointer">
+                    {val === 0 ? "1x" : val === 10 ? "MAX" : `10^${val}`}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
