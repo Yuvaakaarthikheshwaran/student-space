@@ -447,7 +447,7 @@ export default function DeepSpaceEngine() {
               
               <div className="grid grid-cols-2 gap-12 mb-6" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', marginBottom: '24px' }}>
                 <div className="flex flex-col gap-3" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="flex justify-between items-end" style={{ display: 'flex', justifyContext: 'space-between', alignItems: 'flex-end' }}>
+                  <div className="flex justify-between items-end" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#a3a3a3', fontWeight: 'bold' }}>Sub-light Throttle</span>
                     <span className="text-base font-black text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]" style={{ fontSize: '1rem', fontWeight: 900, color: '#22d3ee', marginLeft: 'auto' }}>{velocityC.toFixed(4)} c</span>
                   </div>
@@ -462,7 +462,7 @@ export default function DeepSpaceEngine() {
                 </div>
 
                 <div className="flex flex-col gap-3" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="flex justify-between items-end" style={{ display: 'flex', justifyContext: 'space-between', alignItems: 'flex-end' }}>
+                  <div className="flex justify-between items-end" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#a3a3a3', fontWeight: 'bold' }}>Time Warp Multiplier</span>
                     <span className="text-base font-black text-purple-400 drop-shadow-[0_0_5px_rgba(168,85,247,0.5)]" style={{ fontSize: '1rem', fontWeight: 900, color: '#c084fc', marginLeft: 'auto' }}>{timeExp === 0 ? "1x (Real Time)" : `10^${timeExp.toFixed(1)}x`}</span>
                   </div>
