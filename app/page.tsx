@@ -5,8 +5,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
+// --- TYPESCRIPT OVERRIDE ---
+// This tells Vercel's build server to stop panicking about missing global variables
+declare var __firebase_config: any;
+declare var __app_id: any;
+declare var __initial_auth_token: any;
+
 // --- SAFE FIREBASE INITIALIZATION ---
-// This ensures the app still works even if you deploy to Vercel without setting up the database keys yet.
 let app: any, auth: any, db: any;
 const isFirebaseAvailable = typeof __firebase_config !== 'undefined' && typeof __app_id !== 'undefined';
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'local-build';
@@ -111,7 +116,6 @@ export default function DeepSpaceEngine() {
 
   useEffect(() => {
     if (!db || !user) return;
-    // Rule 1: Strict Paths
     const starsQuery = collection(db, 'artifacts', appId, 'public', 'data', 'sharedStars');
     const unsubscribe = onSnapshot(starsQuery, (snapshot) => {
       const liveStars: StarData[] = [];
@@ -153,18 +157,15 @@ export default function DeepSpaceEngine() {
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad)
       };
       
-      // Target Locally
       setTargetStar(newStar); 
       setIsNavLocked(true); 
       setSearchQuery("");
 
-      // UPLOAD TO BACKEND (Make it available to all players)
       if (db && user) {
-        newStar.discoveredBy = user.uid.substring(0, 6); // Save discoverer tag
+        newStar.discoveredBy = user.uid.substring(0, 6);
         const starRef = doc(db, 'artifacts', appId, 'public', 'data', 'sharedStars', newStar.id);
         await setDoc(starRef, newStar);
       } else {
-        // Fallback if backend is missing
         setSharedStars(prev => [...prev, newStar]);
       }
 
@@ -183,7 +184,7 @@ export default function DeepSpaceEngine() {
     }
   };
 
-  // --- CORE 2D PHYSICS ENGINE (HIGH FPS) ---
+  // --- CORE 2D PHYSICS ENGINE ---
   useEffect(() => {
     if (!hasStarted) return;
     const ctx = canvasRef.current?.getContext("2d", { alpha: false });
@@ -232,7 +233,6 @@ export default function DeepSpaceEngine() {
       let v = refs.vel;
       let moveDist = v * dYrs;
 
-      // Auto-brake algorithm outside star radius
       const starRenderRadius = Math.max(0.02, refs.tgt.radius * 0.015);
       const safeStopDist = (starRenderRadius * 4.5) + 0.05;
 
@@ -252,7 +252,6 @@ export default function DeepSpaceEngine() {
         st.ship.z += Math.cos(st.camera.yaw) * Math.cos(st.camera.pitch) * moveDist;
       }
 
-      // DOM Telemetry Update (Bypasses React State for pure 60FPS)
       const elDist = document.getElementById("hud-dist");
       if (elDist) elDist.innerText = (distToTgt / gamma).toFixed(3);
       const elGamma = document.getElementById("hud-gamma");
@@ -272,7 +271,6 @@ export default function DeepSpaceEngine() {
          if (distEl) distEl.innerText = Math.hypot(s.x - st.ship.x, s.y - st.ship.y, s.z - st.ship.z).toFixed(4) + " LY";
       });
 
-      // Render 1: Skybox (Infinity)
       ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
       skybox.current.forEach(s => {
          const p = project(s.x, s.y, s.z, v, true);
@@ -280,7 +278,6 @@ export default function DeepSpaceEngine() {
       });
       ctx.globalAlpha = 1.0;
 
-      // Render 2: Relativistic Dust
       ctx.lineCap = "round"; ctx.beginPath();
       bgDust.current.forEach(d => {
         let dx = d.x - st.ship.x, dy = d.y - st.ship.y, dz = d.z - st.ship.z;
@@ -294,13 +291,11 @@ export default function DeepSpaceEngine() {
       });
       ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.3})`; ctx.lineWidth = v > 0.1 ? 2 : 1; ctx.stroke();
 
-      // Render 3: Stars & Labels
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          // Prevent the "Black Box" crash by controlling bloom and rendering
           const bloom = p.dist < 0.5 ? Math.pow(0.5 / Math.max(0.0001, p.dist), 2) : 0;
-          const maxRadiusAllowed = w * 0.4; // Cap star size so it doesn't break canvas
+          const maxRadiusAllowed = w * 0.4; 
           const cr = Math.max(1.5, Math.min(maxRadiusAllowed, s.radius * 0.015 * p.scale + s.radius * bloom));
           const gr = p.dist < 0.5 ? Math.min(maxRadiusAllowed * 1.5, cr * 3) : Math.max(2, cr * 2); 
 
@@ -438,7 +433,7 @@ export default function DeepSpaceEngine() {
                 Global Discovery Net
              </p>
              <span className="text-[9px] bg-white/10 px-2 py-0.5 rounded text-neutral-400 font-mono">
-               {user ? `Connected` : 'Offline'}
+               {user ? `Connected` : 'Local Only'}
              </span>
           </div>
           <form onSubmit={searchSimbadAPI} className="flex gap-2">
@@ -532,13 +527,13 @@ export default function DeepSpaceEngine() {
             <div className="flex justify-between items-center bg-green-950/30 border-b border-green-500/50 p-4">
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#0f0]"></div>
-                <h2 className="font-bold tracking-widest uppercase">Classified Access: Level 10 Clearance</h2>
+                <h2 className="font-bold tracking-widest uppercase text-sm">Classified Access: Level 10 Clearance</h2>
               </div>
-              <button onClick={() => setShowClassified(false)} className="text-green-500 hover:text-white hover:bg-green-500 px-3 py-1 border border-green-500 rounded transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Close Connection</button>
+              <button onClick={() => setShowClassified(false)} className="text-green-500 hover:text-black hover:bg-green-500 px-4 py-2 border border-green-500 rounded transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Close Connection</button>
             </div>
 
             {/* Terminal Content */}
-            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 text-xs whitespace-pre-wrap leading-relaxed">
+            <div className="p-8 overflow-y-auto custom-scrollbar flex-1 text-sm whitespace-pre-wrap leading-relaxed">
 {`COMPUTER SCIENCE PRACTICALS 2026-27
 
 PROGRAM 1
