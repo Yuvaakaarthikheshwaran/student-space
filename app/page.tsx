@@ -489,10 +489,18 @@ export default function DeepSpaceEngine() {
 
           {/* --- CLASSIFIED EASTER EGG OVERLAY (10k RUPEE REWARD) --- */}
           {showClassified && (
-            <div className="absolute inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-8" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: 'rgba(0,0,0,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px' }}>
+            <div 
+              className="absolute inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-8" 
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: 'rgba(0,0,0,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px' }}
+              onPointerDown={() => setShowClassified(false)}
+            >
               <div className="absolute inset-0 pointer-events-none opacity-10" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', opacity: 0.1, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, #0f0 2px, #0f0 4px)" }}></div>
               
-              <div className="relative w-full max-w-4xl h-[85vh] bg-black border border-green-500/50 rounded-lg shadow-[0_0_50px_rgba(0,255,0,0.1)] flex flex-col font-mono text-green-500 overflow-hidden" style={{ position: 'relative', width: '100%', maxWidth: '896px', height: '85vh', background: '#000', border: '1px solid rgba(0,255,0,0.5)', borderRadius: '8px', display: 'flex', flexDirection: 'column', fontFamily: 'monospace', color: '#22c55e', overflow: 'hidden' }}>
+              <div 
+                className="relative w-full max-w-4xl h-[85vh] bg-black border border-green-500/50 rounded-lg shadow-[0_0_50px_rgba(0,255,0,0.1)] flex flex-col font-mono text-green-500 overflow-hidden" 
+                style={{ position: 'relative', width: '100%', maxWidth: '896px', height: '85vh', background: '#000', border: '1px solid rgba(0,255,0,0.5)', borderRadius: '8px', display: 'flex', flexDirection: 'column', fontFamily: 'monospace', color: '#22c55e', overflow: 'hidden' }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
                 <div className="flex justify-between items-center bg-green-950/30 border-b border-green-500/50 p-4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(5,46,22,0.3)', borderBottom: '1px solid rgba(0,255,0,0.5)', padding: '16px' }}>
                   <div className="flex items-center gap-3" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#0f0]" style={{ width: '12px', height: '12px', backgroundColor: '#22c55e', borderRadius: '50%', boxShadow: '0 0 10px #0f0' }}></div>
