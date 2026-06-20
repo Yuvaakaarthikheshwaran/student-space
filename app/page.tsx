@@ -60,7 +60,7 @@ export default function DeepSpaceEngine() {
     }
   }, []);
 
-  // Secure Auth
+  // Secure Auth (Enhanced Error Logging)
   useEffect(() => {
     if (!auth) {
       setTimeout(() => setUser({ uid: Math.random().toString(36).substring(2, 8).toUpperCase() } as any), 1000);
@@ -73,7 +73,9 @@ export default function DeepSpaceEngine() {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("FIREBASE AUTH BLOCKED:", e);
+      }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -89,7 +91,7 @@ export default function DeepSpaceEngine() {
       const liveStars: StarData[] = [];
       snapshot.forEach(doc => liveStars.push(doc.data() as StarData));
       setSharedStars(liveStars);
-    });
+    }, (error) => console.error("STAR SYNC FAILED:", error));
 
     // 2. Listen for Global Chat
     const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'commlink'), (snapshot) => {
@@ -97,7 +99,7 @@ export default function DeepSpaceEngine() {
       snapshot.forEach(doc => liveChat.push({ id: doc.id, ...doc.data() }));
       liveChat.sort((a, b) => a.timestamp - b.timestamp);
       setChatMessages(liveChat.slice(-50)); 
-    });
+    }, (error) => console.error("CHAT SYNC FAILED:", error));
 
     // 3. MULTIPLAYER: Listen for other Live Fleet players
     const unsubFleet = onSnapshot(collection(db, 'artifacts', appId, 'public', 'fleet'), (snapshot) => {
@@ -105,12 +107,15 @@ export default function DeepSpaceEngine() {
       const active: any[] = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        if (now - data.timestamp < 10000 && doc.id !== user.uid) {
-          active.push({ id: doc.id, ...data });
+        // Ignore corrupted coordinates from database
+        if (typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
+          if (now - data.timestamp < 10000 && doc.id !== user.uid) {
+            active.push({ id: doc.id, ...data });
+          }
         }
       });
       setFleetLocations(active);
-    });
+    }, (error) => console.error("FLEET SYNC FAILED:", error));
 
     return () => { unsubStars(); unsubChat(); unsubFleet(); };
   }, [user]);
@@ -118,14 +123,18 @@ export default function DeepSpaceEngine() {
   // MULTIPLAYER: Broadcast My Live Location every second
   useEffect(() => {
     if (!db || !user || !hasStarted) return;
-    const interval = setInterval(() => {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'fleet', user.uid), {
-        x: engineState.current.ship.x,
-        y: engineState.current.ship.y,
-        z: engineState.current.ship.z,
-        name: agentName || user.uid.substring(0,4),
-        timestamp: Date.now()
-      }, { merge: true });
+    const interval = setInterval(async () => {
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'fleet', user.uid), {
+          x: engineState.current.ship.x,
+          y: engineState.current.ship.y,
+          z: engineState.current.ship.z,
+          name: agentName || user.uid.substring(0,4),
+          timestamp: Date.now()
+        }, { merge: true });
+      } catch (error) {
+        console.warn("Could not broadcast location (Check Firestore Rules)");
+      }
     }, 1500);
     return () => clearInterval(interval);
   }, [user, hasStarted, agentName]);
@@ -331,8 +340,9 @@ export default function DeepSpaceEngine() {
          elEta.innerText = etaYrs < 0 ? "INF" : etaYrs < 0.0027 ? `${(etaYrs * 365).toFixed(1)} D` : `${etaYrs.toFixed(2)} Y`;
       }
 
-      // Update sidebar distances in real-time
+      // Update sidebar distances in real-time (with Crash Shield)
       refs.stars.forEach(s => {
+         if (typeof s.x !== 'number' || isNaN(s.x)) return; 
          const distEl = document.getElementById(`dist-${s.id}`);
          if (distEl) distEl.innerText = Math.hypot(s.x - st.ship.x, s.y - st.ship.y, s.z - st.ship.z).toFixed(4) + " LY";
       });
@@ -359,8 +369,9 @@ export default function DeepSpaceEngine() {
       });
       ctx.strokeStyle = `rgba(255, 255, 255, ${v > 0.1 ? 0.6 : 0.3})`; ctx.lineWidth = v > 0.1 ? 2 : 1; ctx.stroke();
 
-      // MULTIPLAYER: Live Fleet Rendering
+      // MULTIPLAYER: Live Fleet Rendering (with Crash Shield)
       refs.fleet.forEach(f => {
+        if (typeof f.x !== 'number' || isNaN(f.x)) return;
         const p = project(f.x, f.y, f.z, v);
         if (p && p.dist > 0.05) {
           ctx.fillStyle = "#a855f7"; // Purple for multiplayer ships
@@ -374,6 +385,7 @@ export default function DeepSpaceEngine() {
 
       // Stars
       refs.stars.forEach(s => {
+        if (typeof s.x !== 'number' || isNaN(s.x)) return; // Crash shield
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (!p) return;
         
@@ -540,7 +552,7 @@ export default function DeepSpaceEngine() {
                 timestamp: Date.now() 
               };
 
-              // Optimistic UI update for immediate feedback
+              // Optimistic UI update so it never vanishes
               setChatMessages(prev => [...prev, { id: Date.now().toString(), ...newMsg }].slice(-50));
               setChatInput("");
 
