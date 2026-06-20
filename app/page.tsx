@@ -8,6 +8,7 @@ import { auth, db, appId } from '../lib/firebase';
 import { CORE_STARS, StarData } from '../data/coreStars';
 import InteractiveTerminal from '../components/terminal/InteractiveTerminal';
 import FlightHUD from '../components/hud/FlightHUD';
+import GalaxyMap from '../components/navigation/GalaxyMap';
 
 const SECONDS_PER_YEAR = 31557600;
 
@@ -29,8 +30,24 @@ export default function DeepSpaceEngine() {
   const [arrivalScan, setArrivalScan] = useState(false);
   const [isNavLocked, setIsNavLocked] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showMap, setShowMap] = useState(false);
 
   // Global Key Listener for Backtick
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') {
+        e.preventDefault();
+        setShowTerminal(prev => !prev);
+      }
+      if (e.key.toLowerCase() === 'm' && !showTerminal && !isSearching) {
+        e.preventDefault();
+        setShowMap(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showTerminal, isSearching]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '`' || e.key === '~') {
@@ -193,7 +210,7 @@ export default function DeepSpaceEngine() {
     up: () => { engineState.current.mouse.isDown = false; },
     move: (e: React.MouseEvent) => {
       const m = engineState.current.mouse;
-      if (!m.isDown || isNavLocked || !hasStarted || showTerminal) return;
+      if (!m.isDown || isNavLocked || !hasStarted || showTerminal || showMap) return;
       engineState.current.camera.targetYaw += (e.clientX - m.lastX) * 0.003;
       engineState.current.camera.targetPitch = Math.max(-1.57, Math.min(1.57, engineState.current.camera.targetPitch - (e.clientY - m.lastY) * 0.003));
       m.lastX = e.clientX; m.lastY = e.clientY;
@@ -202,7 +219,7 @@ export default function DeepSpaceEngine() {
 
   // --- CORE PHYSICS LOOP ---
   useEffect(() => {
-    if (!hasStarted || showTerminal) return;
+    if (!hasStarted || showTerminal || showMap) return;
     const ctx = canvasRef.current?.getContext("2d", { alpha: false });
     if (!ctx || !canvasRef.current) return;
     let w = canvasRef.current.width = window.innerWidth, h = canvasRef.current.height = window.innerHeight, reqId: number;
@@ -506,13 +523,28 @@ export default function DeepSpaceEngine() {
 
           {/* FLIGHT CONTROLS */}
           <div style={{ position: 'absolute', bottom: '24px', left: '50%', transform: 'translateX(-50%)', zIndex: 20, width: '100%', maxWidth: '896px', padding: '0 24px' }}>
-              <FlightHUD velocityC={velocityC} setVelocityC={setVelocityC} timeExp={timeExp} setTimeExp={setTimeExp} />
-          </div>
+          <FlightHUD velocityC={velocityC} setVelocityC={setVelocityC} timeExp={timeExp} setTimeExp={setTimeExp} />
+      </div>
 
-          {/* EASTER EGG */}
-          {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} />}
-        </main>
+      {/* TACTICAL MAP */}
+      {showMap && (
+        <GalaxyMap 
+          stars={knownStars}
+          fleet={fleetLocations}
+          ship={engineState.current.ship}
+          onSelectTarget={(star) => {
+            setTargetStar(star);
+            setIsNavLocked(true);
+            setShowMap(false);
+          }}
+          onClose={() => setShowMap(false)}
+        />
       )}
-    </>
+
+      {/* EASTER EGG */}
+      {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} />}
+    </main>
+  )}
+</>
   );
 }
