@@ -2,9 +2,10 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { signInWithCustomToken, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 // Relative Imports for Root Architecture
-import { auth, db, appId } from '../lib/firebase';
+import { app, auth, db, appId } from '../lib/firebase';
 import { CORE_STARS, StarData } from '../data/coreStars';
 import InteractiveTerminal from '../components/terminal/InteractiveTerminal';
 import FlightHUD from '../components/hud/FlightHUD';
@@ -31,8 +32,9 @@ export default function DeepSpaceEngine() {
   const [isNavLocked, setIsNavLocked] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
-  // Global Key Listener for Backtick
+  // Global Key Listener for Backtick & Map
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '`' || e.key === '~') {
@@ -47,17 +49,6 @@ export default function DeepSpaceEngine() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTerminal, isSearching]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '`' || e.key === '~') {
-        e.preventDefault();
-        setShowTerminal(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !document.getElementById('tailwind-cdn')) {
@@ -132,10 +123,47 @@ export default function DeepSpaceEngine() {
         y: engineState.current.ship.y,
         z: engineState.current.ship.z,
         timestamp: Date.now()
-      });
+      }, { merge: true });
     }, 1500);
     return () => clearInterval(interval);
   }, [user, hasStarted]);
+
+  // --- FCM NOTIFICATIONS INTEGRATION ---
+  const requestNotificationPermission = async () => {
+    if (!app || !user || typeof window === 'undefined' || !('Notification' in window)) {
+      alert("Push notifications aren't supported on this browser.");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        const messaging = getMessaging(app);
+        const token = await getToken(messaging, {
+          vapidKey: 'BEG37DUh4P2iqpeLnEEZhqpWmBjGHnt_3BZlFytnN63vc4848KzcIDYAkpAWJ1YqcQIkugpGYBJ0arV3auSMbjg'
+        });
+
+        if (token) {
+          // Store token in database for cloud functions to send targeted alerts
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'fleet', user.uid), {
+            fcmToken: token
+          }, { merge: true });
+          
+          setNotificationsEnabled(true);
+          
+          // Foreground message handler
+          onMessage(messaging, (payload) => {
+            console.log("Foreground transmission received: ", payload);
+            // Could trigger custom UI alerts here if needed
+          });
+        }
+      } else {
+        console.warn("Notification permission denied.");
+      }
+    } catch (error) {
+      console.error("FCM Token generation failed: ", error);
+    }
+  };
 
   const knownStars = useMemo(() => {
     const combined = [...CORE_STARS];
@@ -389,7 +417,7 @@ export default function DeepSpaceEngine() {
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); 
     return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
-  }, [hasStarted, showTerminal]);
+  }, [hasStarted, showTerminal, showMap]);
 
   return (
     <>
@@ -414,7 +442,7 @@ export default function DeepSpaceEngine() {
                   <p className="text-neutral-300 mb-4 text-sm leading-relaxed" style={{ margin: 0, paddingBottom: '16px', color: '#d4d4d8' }}>
                     <strong className="text-emerald-400 font-bold" style={{ color: '#34d399' }}>UPGRADE ACTIVE:</strong> Component Architecture injected. 
                     <br/><br/>
-                    <span className="text-purple-400 font-bold" style={{ color: '#c084fc' }}>SECURE BACK-END:</span> Multiplayer Fleet Tracking Online.
+                    <span className="text-purple-400 font-bold" style={{ color: '#c084fc' }}>SECURE BACK-END:</span> Multiplayer Fleet Tracking & Push Alerts Online.
                   </p>
               </div>
               <button onClick={() => setHasStarted(true)} className="fallback-btn bg-emerald-500 hover:bg-emerald-400 text-black px-12 py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transform hover:-translate-y-1">Ignite 2D Engine</button>
@@ -450,7 +478,12 @@ export default function DeepSpaceEngine() {
           <aside className="absolute top-32 left-6 w-[320px] bg-black/50 backdrop-blur-2xl border border-emerald-500/20 p-4 rounded-2xl pointer-events-auto shadow-[0_0_40px_rgba(0,0,0,0.8)] z-20 flex flex-col" style={{ position: 'absolute', top: '120px', left: '24px', width: '320px', height: 'calc(100vh - 300px)', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(16,185,129,0.2)', padding: '16px', borderRadius: '16px', pointerEvents: 'auto', zIndex: 20, display: 'flex', flexDirection: 'column' }}>
             <div className="flex items-center gap-2 border-b border-emerald-500/20 pb-3 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(16,185,129,0.2)', paddingBottom: '12px', marginBottom: '12px' }}>
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
-              <h2 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest" style={{ margin: 0, fontSize: '10px', color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 'bold' }}>Interstellar Comm-Link</h2>
+              <h2 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex-1" style={{ margin: 0, fontSize: '10px', color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 'bold' }}>Interstellar Comm-Link</h2>
+              {!notificationsEnabled && (
+                 <button onClick={requestNotificationPermission} className="text-[8px] bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/50 text-emerald-300 px-2 py-1 rounded transition-colors uppercase tracking-widest font-bold">
+                    Enable Alerts
+                 </button>
+              )}
             </div>
             
             <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar flex flex-col" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '8px' }}>
