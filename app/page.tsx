@@ -17,6 +17,7 @@ export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   const [user, setUser] = useState<User | null>(null);
+  const [agentName, setAgentName] = useState(""); // <-- NEW: Global Username State
   const [sharedStars, setSharedStars] = useState<StarData[]>([]);
   const [fleetLocations, setFleetLocations] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -122,11 +123,12 @@ export default function DeepSpaceEngine() {
         x: engineState.current.ship.x,
         y: engineState.current.ship.y,
         z: engineState.current.ship.z,
+        name: agentName || user.uid.substring(0,4),
         timestamp: Date.now()
       }, { merge: true });
     }, 1500);
     return () => clearInterval(interval);
-  }, [user, hasStarted]);
+  }, [user, hasStarted, agentName]);
 
   // --- FCM NOTIFICATIONS INTEGRATION ---
   const requestNotificationPermission = async () => {
@@ -144,17 +146,14 @@ export default function DeepSpaceEngine() {
         });
 
         if (token) {
-          // Store token in database for cloud functions to send targeted alerts
           await setDoc(doc(db, 'artifacts', appId, 'public', 'fleet', user.uid), {
             fcmToken: token
           }, { merge: true });
           
           setNotificationsEnabled(true);
           
-          // Foreground message handler
           onMessage(messaging, (payload) => {
             console.log("Foreground transmission received: ", payload);
-            // Could trigger custom UI alerts here if needed
           });
         }
       } else {
@@ -217,7 +216,7 @@ export default function DeepSpaceEngine() {
       const newStar: StarData = {
         id: `API-${Date.now()}`, name: xml.querySelector("oname")?.textContent || searchQuery.toUpperCase(), class: "API Target", color: "#a5b4fc", radius: 1.5, distanceLY: distLY, isCustom: true,
         x: distLY * Math.cos(decRad) * Math.cos(raRad), y: distLY * Math.sin(decRad), z: distLY * Math.cos(decRad) * Math.sin(raRad),
-        discoveredBy: user ? user.uid.substring(0,6) : "GUEST"
+        discoveredBy: agentName || "GUEST" // <-- Use Agent Name here
       };
       
       setTargetStar(newStar); 
@@ -226,7 +225,12 @@ export default function DeepSpaceEngine() {
 
       if (db) {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sharedStars', newStar.id), newStar);
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), { text: `SYSTEM: Agent ${newStar.discoveredBy} discovered ${newStar.name}`, sender: "SYSTEM", timestamp: Date.now(), isSystem: true });
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), { 
+          text: `SYSTEM: Agent ${newStar.discoveredBy} mapped ${newStar.name}`, 
+          sender: "SYSTEM", 
+          timestamp: Date.now(), 
+          isSystem: true 
+        });
       } else {
         setSharedStars(prev => [...prev, newStar]);
       }
@@ -364,7 +368,7 @@ export default function DeepSpaceEngine() {
           ctx.fillStyle = "rgba(168, 85, 247, 0.8)";
           ctx.font = "8px monospace";
           ctx.textAlign = "center";
-          ctx.fillText(`AGT-${f.id.substring(0,4)}`, p.sx, p.sy + 12);
+          ctx.fillText(`AGT-${f.name || f.id.substring(0,4)}`, p.sx, p.sy + 12);
         }
       });
 
@@ -432,7 +436,8 @@ export default function DeepSpaceEngine() {
         body, html { background-color: #010101 !important; color: #ffffff !important; margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .fallback-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background-color: #010101; position: relative; z-index: 50; }
         .fallback-btn { background: #10b981; color: #000; padding: 16px 40px; border-radius: 8px; font-weight: 900; font-family: monospace; border: none; cursor: pointer; font-size: 16px; margin-top: 20px; transition: transform 0.2s, background 0.2s; }
-        .fallback-btn:hover { background: #34d399; transform: translateY(-2px); }
+        .fallback-btn:hover:not(:disabled) { background: #34d399; transform: translateY(-2px); }
+        .fallback-btn:disabled { background: #064e3b; color: #a7f3d0; opacity: 0.5; cursor: not-allowed; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, 0.5); border-radius: 10px; }
@@ -441,17 +446,37 @@ export default function DeepSpaceEngine() {
       {!hasStarted ? (
         <div className="fallback-screen flex items-center justify-center h-screen w-screen bg-[#020202] text-white font-mono relative overflow-hidden">
            <div className="absolute inset-0 pointer-events-none z-0 opacity-[0.03] mix-blend-overlay" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 4px)" }}></div>
-           <div className="text-center z-10 max-w-xl px-6">
+           <div className="text-center z-10 max-w-xl px-6 flex flex-col items-center">
               <p className="text-emerald-500 font-bold tracking-[0.3em] uppercase text-xs mb-4 animate-pulse">2D Engine + Discovery Network</p>
               <h1 className="text-5xl font-black mb-6 tracking-tight text-white drop-shadow-lg" style={{ fontSize: '3rem', margin: '0 0 20px 0' }}>Relativistic Engine</h1>
-              <div className="bg-black/60 border border-emerald-500/30 p-8 rounded-2xl mb-8 text-left backdrop-blur-xl shadow-[0_0_40px_rgba(16,185,129,0.1)]" style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '24px', borderRadius: '16px', marginBottom: '30px' }}>
+              <div className="bg-black/60 border border-emerald-500/30 p-8 rounded-2xl mb-8 text-left backdrop-blur-xl shadow-[0_0_40px_rgba(16,185,129,0.1)] w-full" style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '24px', borderRadius: '16px', marginBottom: '30px' }}>
                   <p className="text-neutral-300 mb-4 text-sm leading-relaxed" style={{ margin: 0, paddingBottom: '16px', color: '#d4d4d8' }}>
                     <strong className="text-emerald-400 font-bold" style={{ color: '#34d399' }}>UPGRADE ACTIVE:</strong> Component Architecture injected. 
                     <br/><br/>
                     <span className="text-purple-400 font-bold" style={{ color: '#c084fc' }}>SECURE BACK-END:</span> Multiplayer Fleet Tracking & Push Alerts Online.
                   </p>
               </div>
-              <button onClick={() => setHasStarted(true)} className="fallback-btn bg-emerald-500 hover:bg-emerald-400 text-black px-12 py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transform hover:-translate-y-1">Ignite 2D Engine</button>
+
+              {/* NEW: Agent Designation Input */}
+              <div className="w-full max-w-sm mb-6">
+                <label className="block text-emerald-400 text-[10px] uppercase tracking-widest font-bold mb-2 text-left">Agent Designation</label>
+                <input 
+                  type="text" 
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value.toUpperCase())}
+                  placeholder="ENTER USERNAME"
+                  maxLength={12}
+                  className="w-full bg-black/80 border-2 border-emerald-500/50 rounded-lg px-4 py-3 text-emerald-400 font-bold tracking-widest text-center focus:outline-none focus:border-emerald-400 focus:shadow-[0_0_15px_rgba(16,185,129,0.5)] transition-all uppercase"
+                />
+              </div>
+
+              <button 
+                onClick={() => setHasStarted(true)} 
+                disabled={agentName.trim() === ""}
+                className="fallback-btn font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+              >
+                {agentName.trim() === "" ? "Awaiting Identity..." : "Ignite 2D Engine"}
+              </button>
            </div>
         </div>
       ) : (
@@ -507,18 +532,14 @@ export default function DeepSpaceEngine() {
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              if (!chatInput.trim()) return;
+              if (!chatInput.trim() || !user || !db) return;
               
-              const newMsg = { text: chatInput.trim(), sender: user ? user.uid.substring(0,6) : "GUEST", timestamp: Date.now() };
-              
-              if (db) {
-                // Online mode: Push to Firebase
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), newMsg);
-              } else {
-                // Offline mode: Update local state
-                setChatMessages(prev => [...prev, { id: Date.now().toString(), ...newMsg }].slice(-50));
-              }
-              
+              // NEW: We now send the agentName into the global chat payload
+              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), { 
+                text: chatInput.trim(), 
+                sender: agentName || user.uid.substring(0,6), 
+                timestamp: Date.now() 
+              });
               setChatInput("");
             }} className="mt-3 flex gap-2" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Transmit..." className="w-full bg-black/50 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-white" style={{ flex: 1, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', color: '#fff' }} />
@@ -591,7 +612,8 @@ export default function DeepSpaceEngine() {
       )}
 
       {/* EASTER EGG */}
-      {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} />}
+      {/* NEW: We pass the agentName straight into the terminal component */}
+      {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} username={agentName} />}
     </main>
   )}
 </>
