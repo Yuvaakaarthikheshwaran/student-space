@@ -532,15 +532,25 @@ export default function DeepSpaceEngine() {
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              if (!chatInput.trim() || !user || !db) return;
+              if (!chatInput.trim()) return;
               
-              // NEW: We now send the agentName into the global chat payload
-              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), { 
+              const newMsg = { 
                 text: chatInput.trim(), 
-                sender: agentName || user.uid.substring(0,6), 
+                sender: agentName || (user ? user.uid.substring(0,6) : "GUEST"), 
                 timestamp: Date.now() 
-              });
+              };
+
+              // Optimistic UI update for immediate feedback
+              setChatMessages(prev => [...prev, { id: Date.now().toString(), ...newMsg }].slice(-50));
               setChatInput("");
+
+              if (db) {
+                try {
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), newMsg);
+                } catch (error) {
+                  console.error("Firebase write failed. Displaying message locally.");
+                }
+              }
             }} className="mt-3 flex gap-2" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Transmit..." className="w-full bg-black/50 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-white" style={{ flex: 1, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', color: '#fff' }} />
               <button type="submit" className="bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/50 hover:border-emerald-400 px-3 rounded-lg text-xs font-bold text-emerald-400 cursor-pointer" style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.5)', padding: '0 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', color: '#34d399', cursor: 'pointer' }}>TX</button>
