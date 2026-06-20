@@ -327,6 +327,12 @@ export default function DeepSpaceEngine() {
          elEta.innerText = etaYrs < 0 ? "INF" : etaYrs < 0.0027 ? `${(etaYrs * 365).toFixed(1)} D` : `${etaYrs.toFixed(2)} Y`;
       }
 
+      // Update sidebar distances in real-time
+      refs.stars.forEach(s => {
+         const distEl = document.getElementById(`dist-${s.id}`);
+         if (distEl) distEl.innerText = Math.hypot(s.x - st.ship.x, s.y - st.ship.y, s.z - st.ship.z).toFixed(4) + " LY";
+      });
+
       // Skybox
       ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
       skybox.current.forEach(s => {
@@ -501,8 +507,18 @@ export default function DeepSpaceEngine() {
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              if (!chatInput.trim() || !user || !db) return;
-              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), { text: chatInput.trim(), sender: user.uid.substring(0,6), timestamp: Date.now() });
+              if (!chatInput.trim()) return;
+              
+              const newMsg = { text: chatInput.trim(), sender: user ? user.uid.substring(0,6) : "GUEST", timestamp: Date.now() };
+              
+              if (db) {
+                // Online mode: Push to Firebase
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'commlink', Date.now().toString()), newMsg);
+              } else {
+                // Offline mode: Update local state
+                setChatMessages(prev => [...prev, { id: Date.now().toString(), ...newMsg }].slice(-50));
+              }
+              
               setChatInput("");
             }} className="mt-3 flex gap-2" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Transmit..." className="w-full bg-black/50 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-white" style={{ flex: 1, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', color: '#fff' }} />
