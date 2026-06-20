@@ -206,8 +206,8 @@ export default function DeepSpaceEngine() {
       let v = refs.vel;
       let moveDist = v * dYrs;
 
-      const starRenderRadius = Math.max(0.02, refs.tgt.radius * 0.015);
-      const safeStopDist = (starRenderRadius * 4.5) + 0.05;
+      // ADJUSTED OPTICAL BRAKING: Safely stop at an optically scaled distance based on radius
+      const safeStopDist = (refs.tgt.radius * 0.004) + 0.02;
 
       if (v > 0 && moveDist >= distToTgt - safeStopDist) {
         moveDist = Math.max(0, distToTgt - safeStopDist);
@@ -267,10 +267,20 @@ export default function DeepSpaceEngine() {
       refs.stars.forEach(s => {
         const p = project(s.x, s.y, s.z, v), isTgt = s.id === refs.tgt.id;
         if (p) {
-          const bloom = p.dist < 0.5 ? Math.pow(0.5 / Math.max(0.0001, p.dist), 2) : 0;
+          // OPTICAL SIZING ALGORITHM
+          // 1. Point Size Fallback: They look like tiny sub-pixel points from far away
+          const basePointRadius = Math.max(0.8, Math.min(2.5, s.radius * 0.05)); 
+          
+          // 2. Optical Scaler: When you get close, they bloom into disks according to inverse-square distance
+          const physicalRadius = s.radius * 0.002 * p.scale; 
+          const bloom = p.dist < 0.3 ? Math.pow(0.3 / Math.max(0.0001, p.dist), 2) * Math.max(1, s.radius * 0.5) : 0;
+          
           const maxRadiusAllowed = w * 0.4; 
-          const cr = Math.max(1.5, Math.min(maxRadiusAllowed, s.radius * 0.015 * p.scale + s.radius * bloom));
-          const gr = p.dist < 0.5 ? Math.min(maxRadiusAllowed * 1.5, cr * 3) : Math.max(2, cr * 2); 
+          const cr = Math.min(maxRadiusAllowed, Math.max(basePointRadius, physicalRadius + bloom));
+          
+          // Glow expands dynamically as you approach the star
+          const glowMultiplier = p.dist < 1.0 ? 3 + (1.0 - p.dist) * 4 : 2;
+          const gr = Math.min(maxRadiusAllowed * 1.5, Math.max(basePointRadius * 2, cr * glowMultiplier));
 
           if (p.dist > 0.0001) {
              const g = ctx.createRadialGradient(p.sx, p.sy, cr, p.sx, p.sy, gr);
@@ -512,8 +522,7 @@ export default function DeepSpaceEngine() {
                 <div className="p-8 overflow-y-auto custom-scrollbar flex-1 text-sm whitespace-pre-wrap leading-relaxed" style={{ padding: '32px', overflowY: 'auto', flex: 1, fontSize: '0.875rem', whiteSpace: 'pre-wrap', lineHeight: 1.625 }}>
 {`COMPUTER SCIENCE PRACTICALS 2026-27
 
-PROGRAM 1
-#Program for Arithmetic Calculator
+PROGRAM 1: Write a Python Program to enter two numbers and print the arithmetic operations like +, -, *, /, // and %.
 result = 0
 while True:
     val1 = float(input("Enter the first value :"))
@@ -539,13 +548,13 @@ while True:
     if x=='n':
         break
 
-PROGRAM 2
+PROGRAM 2: Write a Python Program to enter the number of terms and to print the Fibonacci Series.
 n =int(input("Enter the limit:"))
 x = -1
 y = 1
 z = 0
 i=0
-print("Fibonacci series :\\n")
+print("Fibonacci series :\n")
 while(i<n):
     print(z, end=" ")
     x = y
@@ -553,7 +562,7 @@ while(i<n):
     z = x + y
     i=i+1
 
-PROGRAM 3
+PROGRAM 3: Write a menu driven Python program to calculate Area of triangle, Area of a circle, and Area of Rectangle.
 while True:
     print('1.Area of triangle')
     print('2.Area of Circle')
@@ -579,7 +588,7 @@ while True:
     if c=='n':
         break
 
-PROGRAM 4
+PROGRAM 4: Write a menu driven program to find the factorial of given number and sum of list elements.
 while True:
     print("1.Factorial")
     print("2.Sum of Elements in the list")
@@ -600,7 +609,7 @@ while True:
     if con=='n':
         break
 
-PROGRAM 5
+PROGRAM 5: Write a Program to check if the entered number is Armstrong or not.
 no=int(input("Enter any number to check : "))
 no1=no
 sum=0
@@ -613,7 +622,7 @@ if sum==no1:
 else:
     print("Not an Armstrong Number")
 
-PROGRAM 6
+PROGRAM 6: Write a Python program to check the given string if palindrome or not.
 a=input("Enter the String")
 b=""
 l=len(a)
@@ -624,7 +633,7 @@ if a==b:
 else:
     print("The given string is not palindrome")
 
-PROGRAM 7
+PROGRAM 7: Write a Python program to count number of character, number of upper case and lower case letters in a given string.
 st=input("Enter the string")
 up=0
 lc=0
@@ -639,7 +648,7 @@ print("Number of upper case letter",up)
 print("Number of lower case letter",lc)
 print("Number of character ",Chr)
 
-PROGRAM 8
+PROGRAM 8: Write a Python program to print largest even and largest odd number in the list without using built - in functions.
 a=eval(input("Enter a List"))
 odd=[]
 even=[]
@@ -657,7 +666,7 @@ if odd==[]:
 else:
     print("The largest odd number is ",max(odd))
 
-PROGRAM 9
+PROGRAM 9: Write a Python Program to perform Linear Search on list.
 l=eval(input("Enter the list elements"))
 s=eval(input("Enter the element to be searched"))
 b=0
@@ -668,10 +677,279 @@ for i in range(len(l)):
 if b==0:
     print("element not found")
 
-PROGRAMS 10-20 INCLUDED FROM PRACTICAL FILE.
-(Programs 10-15: Text Files, Pickle, CSV, Stack)
-(Programs 16-19: Python MySQL Connectivity)
-(Program 20: SQL Commands and Queries)
+PROGRAM 10: Python Program to read and write the content to/from the text file and count number of lines start with mentioned letter entered by the user.
+f=open("file.txt", 'w')
+char="Text files store data in ascii format.\\nHuman readable form.\\nAt lowest level text file is a collection of bytes"
+f.write(char)
+f.close()
+
+f=open("file.txt",'r')
+x=f.readlines()
+count=0
+s=0
+ser=input("Enter the search letter")
+for i in x:
+    if i[0]==ser:
+        count+=1
+        s=1
+if s==0:
+    print("The letter not found")
+else:
+    print("No of line starts with", ser, "is", count)
+f.close()
+
+PROGRAM 11: Program to find the number of occurrences of the given word using text files.
+f=open("file.txt", 'w')
+char="Seek() function is used to change the position of the file handle to a given specific position.\\nTell() returns the current position of the file read/write pointer within the file"
+f.write(char)
+f.close()
+
+f=open("file.txt",'r')
+x=f.read()
+y=x.split()
+count=0
+s=0
+ser=input("Enter the search word")
+for i in y:
+    if i==ser:
+        count+=1
+        s=1
+if s==0:
+    print("The given word not found")
+else:
+    print("No of time the word ",ser,"occured is", count)
+f.close()
+
+PROGRAM 12: Write and Read operations in Binary files using Pickle Module.
+import pickle
+f=open("library.dat", 'wb')
+while True:
+    Bno=int(input("Enter the Book number"))
+    Bname=input("Enter the name of the book")
+    Bprice=int(input("Enter the Price"))
+    info=[Bno, Bname, Bprice]
+    pickle.dump(info,f)
+    ch=input("Do you want to continue adding records(y/n)")
+    if ch.upper()=='N':
+        break
+f.close()
+
+with open("library.dat", 'rb')as f:
+    while True:
+        try:
+            r=pickle.load(f)
+            print(r)
+        except:
+            break
+
+PROGRAM 13: Writing the data and Searching for a particular records in binary file using pickle module.
+import pickle
+f=open("library.dat",'wb')
+while True:
+    Bno=int(input("Enter the Book number"))
+    Bname=input("Enter the name of the book")
+    Bprice=int(input("enter the Price"))
+    info=[Bno, Bname, Bprice]
+    pickle.dump(info,f)
+    ch=input("Do you want to continue adding records(y/n)")
+    if ch.upper()=='N':
+        break
+f.close()
+
+with open("library.dat", 'rb')as f:
+    n=int(input("Enter the no to be searched"))
+    while True:
+        try:
+            r=pickle.load(f)
+            if r[0]==n:
+                print(r)
+        except:
+            break
+
+PROGRAM 14: Writing the records in CSV files and count number of records in the file.
+import csv
+f=open("emp.csv", 'w', newline="")
+csvw=csv.writer(f)
+while True:
+    Eno=int(input("Enter the Employee number"))
+    Ename=input("Enter the name of the Employee")
+    Esal=int(input("Enter the Esal"))
+    Desig=input("Enter the Designation")
+    info=[Eno, Ename, Esal, Desig]
+    csvw.writerow(info)
+    ch=input("Do you want to continue adding records(y/n)")
+    if ch.upper()=='N':
+        break
+f.close()
+
+c=0
+f=open("emp.csv",'r')
+csvr=csv.reader(f)
+for i in csvr:
+    c=c+1
+    print(i)
+f.close()
+print("Number of records in file is",c)
+
+PROGRAM 15: PUSH and POP operation in stack using list.
+stack=[]
+def PUSH(item, stack):
+    stack.append(item)
+
+def POP(stack):
+    if stack==[]:
+        print("Stack is empty")
+    else:
+        p=stack.pop()
+        print("Deleted element", p)
+
+def DISPLAY(stack):
+    if stack==[]:
+        print("stack is empty")
+    else:
+        for i in range (len(stack)-1,-1,-1):
+            print(stack[i])
+
+while True:
+    print("1.Push\\n2.Pop\\n3.Display")
+    n=int(input("Enter the operation"))
+    if n==1:
+        a=int(input("Enter no"))
+        PUSH(a,stack)
+    elif n==2:
+        POP(stack)
+    elif n==3:
+        DISPLAY(stack)
+    con=input("Do you want to continue")
+    if con=='n':
+        break
+
+PROGRAM 16: Python with MySQL connectivity - creating connection & Table.
+import mysql.connector
+con=mysql.connector.connect(host='localhost', user='root', password='root')
+mycursor=con.cursor()
+
+mycursor.execute("DROP DATABASE IF EXISTS student")
+mycursor.execute("CREATE DATABASE student")
+mycursor.execute("USE student")
+
+mycursor.execute("DROP TABLE IF EXISTS studentinfo")
+mycursor.execute("CREATE TABLE studentinfo (name VARCHAR(30), age INT(3), gender CHAR(1))")
+
+sql = """INSERT INTO studentinfo(name, age, gender) VALUES(%s, %s, %s)"""
+rows = [('Amit', 18, 'M'), ('Sudha', 17, 'F'), ('Suma', 19, 'F'), ('Paresh', 19, 'M'), ('Ali', 17,'M')]
+mycursor.executemany(sql, rows)
+con.commit()
+
+sql = "SELECT * FROM studentinfo"
+mycursor.execute(sql)
+result = mycursor.fetchall()
+for row in result:
+    name = row[0]
+    age = row[1]
+    gender = row[2]
+    print("Name=%s, Age=%s, Gender=%s" % (name, age, gender))
+con.close()
+
+PROGRAM 17: Python with MySQL connectivity - updating records.
+import mysql.connector
+con=mysql.connector.connect(host='localhost', user='root', password='root')
+mycursor=con.cursor()
+
+mycursor.execute("USE student")
+mycursor.execute("DROP TABLE IF EXISTS result")
+mycursor.execute("CREATE TABLE result (name VARCHAR(30), phys INT(3), chem INT(3), math INT(3))")
+
+sql = """INSERT INTO result(name, phys, chem, math) VALUES(%s, %s, %s, %s)"""
+rows = [('Amit', 70,76,80), ('Sudha',80,85,90), ('Suma',50,70,90), ('Paresh',55,60,70), ('Ali', 80,70,75), ('Gargi', 80,60,80)]
+mycursor.executemany(sql, rows)
+con.commit()
+
+sql = "UPDATE result SET math=math+5 WHERE name='%s'" % ('Sudha')
+mycursor.execute(sql)
+
+sql = "SELECT * FROM result"
+mycursor.execute(sql)
+result = mycursor.fetchall()
+for row in result:
+    name = row[0]
+    p = row[1]
+    c = row[2]
+    m = row[3]
+    print("Name=%s, Phys=%d, Chem=%d, Math=%d" % (name,p,c,m))
+con.close()
+
+PROGRAM 18: Python with MySQL connectivity - deleting records.
+import mysql.connector
+con=mysql.connector.connect(host='localhost', user='root', password='root')
+mycursor=con.cursor()
+mycursor.execute("USE student")
+
+sql = "DELETE FROM result WHERE math>=%d" % (90)
+mycursor.execute(sql)
+
+sql = "SELECT * FROM result"
+mycursor.execute(sql)
+result = mycursor.fetchall()
+for row in result:
+    name = row[0]
+    p = row[1]
+    c = row[2]
+    m = row[3]
+    print("Name=%s, Phys=%s, Chem=%s, Math=%s" % (name, p,c,m))
+con.close()
+
+PROGRAM 19: Python with MySQL connectivity -fetch all command.
+import mysql.connector
+con=mysql.connector.connect(host='localhost', user='root', password='root')
+mycursor=con.cursor()
+mycursor.execute("USE student")
+
+mycursor.execute("DROP TABLE IF EXISTS staff")
+mycursor.execute("CREATE TABLE staff (name VARCHAR(30), desg VARCHAR(10), subject VARCHAR(10), salary INT(5))")
+
+sql = """INSERT INTO staff(name, desg, subject, salary) VALUES(%s, %s, %s, %s)"""
+rows = [('Amit', 'PGT', 'CHEM', 8000), ('Sudha', 'HDM', 'BIOL', 8500), ('Suma', 'TGT', 'MATH', 9000), ('Paresh', 'PGT', 'HIND', 7000), ('Ali', 'PRT', 'COMM', 7500), ('Gargi', 'PGT', 'COMP',9000)]
+mycursor.executemany(sql, rows)
+con.commit()
+
+sql = "SELECT * FROM staff WHERE salary>'%d'" % (8000)
+mycursor.execute(sql)
+result = mycursor.fetchall()
+for row in result:
+    name = row[0]
+    des = row[1]
+    sub = row[2]
+    sal = row[3]
+    print("Name=%s, Desg=%s, subject=%s, Salary=%s" % (name,des, sub,sal))
+con.close()
+
+PROGRAM 20: Execute the SQL commands and queries.
+Create table employee (empno varchar(25) primary key, ename varchar(25), department varchar(25), salary int);
+
+Insert into employee values('e034','snigdha sadu','sales', 35000);
+Insert into employee values('e089','rekha sao', 'hr', 65000);
+Insert into employee values('e112', 'shweta jagtap','marketing', 45000);
+Insert into employee values('e123', 'ankush das', 'sales', 40000);
+Insert into employee values('e245','neeraj kapoor','finance', 55000);
+
+Select * from employee;
+
+Select * from employee where department ='sales';
+
+Select * from employee where department in ('sales', 'hr','marketing');
+
+Select * from employee where empname like 's%';
+
+Select * from employee order by salary desc;
+
+Select department, count(*) from employee group by department;
+
+Select count(*) from employee;
+
+update employee set salary = salary +5000 where empno='e123';
+
+delete from employee where empno='e034';
 `}
                 </div>
               </div>
