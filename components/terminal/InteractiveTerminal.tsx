@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PRACTICALS_DATA } from '../../data/practicals';
 
-export default function InteractiveTerminal({ onClose }: { onClose: () => void }) {
+// We now pass the global 'username' into the terminal securely
+export default function InteractiveTerminal({ onClose, username }: { onClose: () => void, username: string }) {
   const [history, setHistory] = useState<{ text: string, type: 'system' | 'user' | 'output' | 'error' | 'success' }[]>([
     { text: "Cosmic Drift OS v9.0.1 (tty1)", type: "system" },
+    { text: `Welcome, Agent ${username}.`, type: "system" },
     { text: "Unauthorized access is strictly prohibited.", type: "system" },
     { text: "Type 'help' for a list of commands.", type: "system" }
   ]);
@@ -22,7 +24,11 @@ export default function InteractiveTerminal({ onClose }: { onClose: () => void }
     const cmd = input.trim();
     if (!cmd && !awaitingPassword) return;
 
-    const newHistory = [...history, { text: `${isRoot ? 'root' : 'guest'}@cosmic-drift:${isRoot ? '~#' : '~$' } ${awaitingPassword ? '********' : cmd}`, type: 'user' as const }];
+    // Use the dynamic username in the prompt history
+    const promptUser = isRoot ? 'root' : username;
+    const promptSymbol = isRoot ? '~#' : '~$';
+
+    const newHistory = [...history, { text: `${promptUser}@cosmic-drift:${promptSymbol} ${awaitingPassword ? '********' : cmd}`, type: 'user' as const }];
     setInput('');
 
     if (awaitingPassword) {
@@ -57,13 +63,13 @@ export default function InteractiveTerminal({ onClose }: { onClose: () => void }
       case 'cat':
         if (args[1] === 'practicals_26_27.txt') {
           if (isRoot) {
-            newHistory.push({ text: "Decrypting file payload...", type: "system" });
+            newHistory.push({ text: `Decrypting file payload for Agent ${username}...`, type: "system" });
             newHistory.push({ text: PRACTICALS_DATA, type: "output" });
           } else {
-            newHistory.push({ text: "cat: practicals_26_27.txt: Permission denied", type: "error" });
+            newHistory.push({ text: "cat: practicals_26_27.txt: Permission denied. Root access required.", type: "error" });
           }
         } else if (args[1] === 'readme.txt') {
-          newHistory.push({ text: "Welcome to the Cosmic Drift navigation console.", type: "output" });
+          newHistory.push({ text: `Welcome to the Cosmic Drift navigation console, Agent ${username}.`, type: "output" });
         } else {
           newHistory.push({ text: `cat: ${args[1] || ''}: No such file or directory`, type: "error" });
         }
@@ -117,7 +123,7 @@ export default function InteractiveTerminal({ onClose }: { onClose: () => void }
           ))}
           <form onSubmit={handleCommand} style={{ display: 'flex', marginTop: '8px' }}>
             <span style={{ marginRight: '8px', color: isRoot ? '#3b82f6' : '#22c55e' }}>
-              {isRoot ? "root@cosmic-drift:~#" : "guest@cosmic-drift:~$"} {awaitingPassword && "Password:"}
+              {isRoot ? "root" : username}@cosmic-drift:{isRoot ? "~#" : "~$"} {awaitingPassword && "Password:"}
             </span>
             <input ref={inputRef} type={awaitingPassword ? "password" : "text"} value={input} onChange={(e) => setInput(e.target.value)} className="bg-transparent border-none outline-none text-green-500 flex-1 font-mono" style={{ background: 'transparent', border: 'none', outline: 'none', color: '#22c55e', flex: 1, fontFamily: 'monospace', fontSize: '0.875rem' }} autoComplete="off" spellCheck="false" autoFocus />
           </form>
