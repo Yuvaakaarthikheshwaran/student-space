@@ -1,23 +1,22 @@
 "use client";
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { signInWithCustomToken, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
-// Relative Imports for Root Architecture
-import { app, auth, db, appId } from '../lib/firebase';
-import { CORE_STARS, StarData } from '../data/coreStars';
-import InteractiveTerminal from '../components/terminal/InteractiveTerminal';
-import FlightHUD from '../components/hud/FlightHUD';
-import GalaxyMap from '../components/navigation/GalaxyMap';
+// Architecture Imports
+import { auth, db, appId } from '@/lib/firebase';
+import { CORE_STARS, StarData } from '@/data/coreStars';
+import InteractiveTerminal from '@/components/terminal/InteractiveTerminal';
+import FlightHUD from '@/components/hud/FlightHUD';
+import { PRACTICALS_DATA } from '@/data/practicals';
 
 const SECONDS_PER_YEAR = 31557600;
 
 export default function DeepSpaceEngine() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  const [user, setUser] = useState<User | null>(null);
-  const [agentName, setAgentName] = useState(""); // <-- Global Username State
+  const [user, setUser] = useState<{uid: string} | null>(null);
+  const [agentName, setAgentName] = useState(""); 
   const [sharedStars, setSharedStars] = useState<StarData[]>([]);
   const [fleetLocations, setFleetLocations] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -26,35 +25,19 @@ export default function DeepSpaceEngine() {
   const [hasStarted, setHasStarted] = useState(false);
   const [velocityC, setVelocityC] = useState(0); 
   const [timeExp, setTimeExp] = useState(0); 
-  const [targetStar, setTargetStar] = useState(CORE_STARS[1]);
+  const [targetStar, setTargetStar] = useState<StarData>(CORE_STARS[1]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [arrivalScan, setArrivalScan] = useState(false);
   const [isNavLocked, setIsNavLocked] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [showMap, setShowMap] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showPracticals, setShowPracticals] = useState(false);
 
-  // NEW: Global Connection Monitoring
+  // Global Connection Monitoring
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [connectionError, setConnectionError] = useState<string>("");
 
-  // Global Key Listener for Backtick & Map
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '`' || e.key === '~') {
-        e.preventDefault();
-        setShowTerminal(prev => !prev);
-      }
-      if (e.key.toLowerCase() === 'm' && !showTerminal && !isSearching) {
-        e.preventDefault();
-        setShowMap(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showTerminal, isSearching]);
-
+  // Force Tailwind
   useEffect(() => {
     if (typeof window !== 'undefined' && !document.getElementById('tailwind-cdn')) {
       const script = document.createElement('script');
@@ -62,6 +45,18 @@ export default function DeepSpaceEngine() {
       script.src = 'https://cdn.tailwindcss.com';
       document.head.appendChild(script);
     }
+  }, []);
+
+  // Global Key Listener for Backtick
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') {
+        e.preventDefault();
+        setShowTerminal(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Secure Auth with Explicit Error Handling
@@ -164,40 +159,6 @@ export default function DeepSpaceEngine() {
     return () => clearInterval(interval);
   }, [user, hasStarted, agentName, connectionStatus]);
 
-  // --- FCM NOTIFICATIONS INTEGRATION ---
-  const requestNotificationPermission = async () => {
-    if (!app || !user || typeof window === 'undefined' || !('Notification' in window)) {
-      alert("Push notifications aren't supported on this browser.");
-      return;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        const messaging = getMessaging(app);
-        const token = await getToken(messaging, {
-          vapidKey: 'BEG37DUh4P2iqpeLnEEZhqpWmBjGHnt_3BZlFytnN63vc4848KzcIDYAkpAWJ1YqcQIkugpGYBJ0arV3auSMbjg'
-        });
-
-        if (token) {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'fleet', user.uid), {
-            fcmToken: token
-          }, { merge: true });
-          
-          setNotificationsEnabled(true);
-          
-          onMessage(messaging, (payload) => {
-            console.log("Foreground transmission received: ", payload);
-          });
-        }
-      } else {
-        console.warn("Notification permission denied.");
-      }
-    } catch (error) {
-      console.error("FCM Token generation failed: ", error);
-    }
-  };
-
   const knownStars = useMemo(() => {
     const combined = [...CORE_STARS];
     sharedStars.forEach(remoteStar => {
@@ -232,9 +193,17 @@ export default function DeepSpaceEngine() {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
+    const sq = searchQuery.trim().toLowerCase();
+
+    // EASTER EGG: Secret Code entered directly in Search Bar
+    if (sq === "0xcs26") {
+      setShowPracticals(true);
+      setSearchQuery("");
+      return;
+    }
+
     setIsSearching(true);
     try {
-      const sq = searchQuery.trim().toLowerCase();
       const localMatch = knownStars.find(s => s.name.toLowerCase().includes(sq));
       if (localMatch) { setTargetStar(localMatch); setIsNavLocked(true); setIsSearching(false); setSearchQuery(""); return; }
 
@@ -276,7 +245,7 @@ export default function DeepSpaceEngine() {
     up: () => { engineState.current.mouse.isDown = false; },
     move: (e: React.MouseEvent) => {
       const m = engineState.current.mouse;
-      if (!m.isDown || isNavLocked || !hasStarted || showTerminal || showMap) return;
+      if (!m.isDown || isNavLocked || !hasStarted || showTerminal || showPracticals) return;
       engineState.current.camera.targetYaw += (e.clientX - m.lastX) * 0.003;
       engineState.current.camera.targetPitch = Math.max(-1.57, Math.min(1.57, engineState.current.camera.targetPitch - (e.clientY - m.lastY) * 0.003));
       m.lastX = e.clientX; m.lastY = e.clientY;
@@ -285,7 +254,7 @@ export default function DeepSpaceEngine() {
 
   // --- CORE PHYSICS LOOP ---
   useEffect(() => {
-    if (!hasStarted || showTerminal || showMap) return;
+    if (!hasStarted || showTerminal || showPracticals) return;
     const ctx = canvasRef.current?.getContext("2d", { alpha: false });
     if (!ctx || !canvasRef.current) return;
     let w = canvasRef.current.width = window.innerWidth, h = canvasRef.current.height = window.innerHeight, reqId: number;
@@ -464,7 +433,7 @@ export default function DeepSpaceEngine() {
     const rs = () => { w = canvasRef.current!.width = window.innerWidth; h = canvasRef.current!.height = window.innerHeight; };
     window.addEventListener("resize", rs); 
     return () => { cancelAnimationFrame(reqId); window.removeEventListener("resize", rs); };
-  }, [hasStarted, showTerminal, showMap]);
+  }, [hasStarted, showTerminal, showPracticals]);
 
   return (
     <>
@@ -498,7 +467,7 @@ export default function DeepSpaceEngine() {
                   <p className="text-neutral-300 mb-4 text-sm leading-relaxed" style={{ margin: 0, paddingBottom: '16px', color: '#d4d4d8' }}>
                     <strong className="text-emerald-400 font-bold" style={{ color: '#34d399' }}>UPGRADE ACTIVE:</strong> Component Architecture injected. 
                     <br/><br/>
-                    <span className="text-purple-400 font-bold" style={{ color: '#c084fc' }}>SECURE BACK-END:</span> Multiplayer Fleet Tracking & Push Alerts Online.
+                    <span className="text-purple-400 font-bold" style={{ color: '#c084fc' }}>SECURE BACK-END:</span> Multiplayer Fleet Tracking Online.
                   </p>
                   
                   {connectionStatus === 'error' && (
@@ -561,11 +530,6 @@ export default function DeepSpaceEngine() {
             <div className="flex items-center gap-2 border-b border-emerald-500/20 pb-3 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(16,185,129,0.2)', paddingBottom: '12px', marginBottom: '12px' }}>
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
               <h2 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex-1" style={{ margin: 0, fontSize: '10px', color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 'bold' }}>Interstellar Comm-Link</h2>
-              {!notificationsEnabled && connectionStatus === 'connected' && (
-                 <button onClick={requestNotificationPermission} className="text-[8px] bg-emerald-500/20 hover:bg-emerald-500 hover:text-black border border-emerald-500/50 text-emerald-300 px-2 py-1 rounded transition-colors uppercase tracking-widest font-bold">
-                    Enable Alerts
-                 </button>
-              )}
             </div>
             
             <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar flex flex-col" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '8px' }}>
@@ -654,29 +618,36 @@ export default function DeepSpaceEngine() {
 
           {/* FLIGHT CONTROLS */}
           <div style={{ position: 'absolute', bottom: '24px', left: '50%', transform: 'translateX(-50%)', zIndex: 20, width: '100%', maxWidth: '896px', padding: '0 24px' }}>
-          <FlightHUD velocityC={velocityC} setVelocityC={setVelocityC} timeExp={timeExp} setTimeExp={setTimeExp} />
-      </div>
+              <FlightHUD velocityC={velocityC} setVelocityC={setVelocityC} timeExp={timeExp} setTimeExp={setTimeExp} />
+          </div>
 
-      {/* TACTICAL MAP */}
-      {showMap && (
-        <GalaxyMap 
-          stars={knownStars}
-          fleet={fleetLocations}
-          ship={engineState.current.ship}
-          onSelectTarget={(star) => {
-            setTargetStar(star);
-            setIsNavLocked(true);
-            setShowMap(false);
-          }}
-          onClose={() => setShowMap(false)}
-        />
+          {/* DIRECT SEARCH EASTER EGG MODAL */}
+          {showPracticals && (
+            <div 
+              className="absolute inset-0 z-[200] bg-black/95 backdrop-blur-3xl p-8 flex flex-col font-mono text-green-500 overflow-hidden" 
+              style={{ zIndex: 200 }}
+              onPointerDown={() => setShowPracticals(false)}
+            >
+              <div className="absolute inset-0 pointer-events-none opacity-10" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, #0f0 2px, #0f0 4px)" }}></div>
+              <div 
+                className="relative w-full max-w-5xl mx-auto h-full bg-black border border-green-500/50 rounded-lg shadow-[0_0_50px_rgba(0,255,0,0.1)] flex flex-col overflow-hidden"
+                onPointerDown={e => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center bg-green-950/30 border-b border-green-500/50 p-4 shrink-0">
+                  <h2 className="font-bold tracking-widest uppercase text-sm">DECRYPTED PAYLOAD: practicals_26_27.txt</h2>
+                  <button onClick={() => setShowPracticals(false)} className="text-green-500 hover:text-black hover:bg-green-500 px-4 py-2 border border-green-500 rounded transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Close</button>
+                </div>
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1 text-sm whitespace-pre-wrap leading-relaxed select-text">
+                  {PRACTICALS_DATA}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ORIGINAL TERMINAL EASTER EGG */}
+          {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} username={agentName} />}
+        </main>
       )}
-
-      {/* EASTER EGG */}
-      {/* NEW: We pass the agentName straight into the terminal component */}
-      {showTerminal && <InteractiveTerminal onClose={() => setShowTerminal(false)} username={agentName} />}
-    </main>
-  )}
-</>
+    </>
   );
 }
